@@ -34,7 +34,7 @@ public class RechargeProvider {
                                         @RequestParam @ApiParam(name = "amount",value = "金额") Double amount,
                                         @RequestParam @ApiParam(name = "type",value = "充值方式：1.支付宝|2.微信支付") String type) {
         // 校验金额逻辑
-        if (amount <= 0) {
+        if (amount > 0) {
             return new BaseResult<>(false, "充值金额必须大于0");
         }
         User user = userManager.getUserByUserId(userId);
