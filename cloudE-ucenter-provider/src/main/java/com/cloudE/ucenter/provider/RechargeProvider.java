@@ -26,6 +26,8 @@ public class RechargeProvider {
     private UserManager userManager;
     @Resource
     private ApplePayClient applePayClient;
+    @Resource
+    private com.cloudE.pay.client.PointClient pointClient;
 
 
     @HystrixCommand(fallbackMethod = "rechargeFallback")
@@ -40,6 +42,12 @@ public class RechargeProvider {
         User user = userManager.getUserByUserId(userId);
         LOGGER.info("user {} recharge {},type:{}", user.getUsername(), amount, type);
         BaseResult<Boolean> baseResult = applePayClient.recharge(userId, amount);
+        
+        // 充值成功后增加积分
+        if (baseResult.getData()) {
+            pointClient.addPoint(userId, 100); 
+        }
+        
         LOGGER.info("user {} recharge  res:{}", user.getUsername(), JSON.toJSONString(baseResult));
         return baseResult;
 
