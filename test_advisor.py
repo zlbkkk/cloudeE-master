@@ -105,7 +105,7 @@ def call_deepseek_api(messages):
         return None
 
 def analyze_with_llm(filename, diff_content):
-    print(f"\n🤖 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...")
+    print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...")
     
     prompt = f"""
     # Role
