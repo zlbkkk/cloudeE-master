@@ -10,5 +10,5 @@ import org.springframework.web.bind.annotation.RequestParam;
 public interface PointClient {
 
     @RequestMapping(value = "/point/add", method = RequestMethod.POST)
-    BaseResult<Boolean> addPoint(@RequestParam("userId") Long userId, @RequestParam("points") Integer points);
+    BaseResult<Boolean> addPoint(@RequestParam("userId") Long userId, @RequestParam("points") Integer points, @RequestParam("source") String source);
 }
