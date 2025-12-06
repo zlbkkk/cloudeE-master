@@ -127,29 +127,143 @@ def call_deepseek_api(messages):
         print(f"Request Error: {e}")
         return None
 
+def print_code_comparison(diff_text):
+    """
+    打印直观的代码对比
+    """
+    print("\n[Code Diff] 变更代码对比:")
+    print("-" * 80)
+    
+    lines = diff_text.splitlines()
+    for line in lines:
+        # 忽略 git diff 的元数据头
+        if line.startswith("diff --git") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
+            continue
+            
+        if line.startswith("@@"):
+            # 提取行号信息，增加可读性
+            print(f"\n[Line] {line}")
+            continue
+            
+        if line.startswith("-"):
+            # 删除的行 (OLD)
+            print(f"[-] {line[1:]}")
+        elif line.startswith("+"):
+            # 新增的行 (NEW)
+            print(f"[+] {line[1:]}")
+        else:
+            # 上下文行
+            print(f"    {line}")
+    print("-" * 80)
+
+import re
+
+# ... (Previous imports)
+
+def extract_api_paths(diff_text):
+    """
+    从 Diff 中简单提取涉及的 API 路径 (基于 Spring 注解)
+    返回: set(['/recharge', '/user/get'])
+    """
+    paths = set()
+    # 匹配 @RequestMapping, @PostMapping, @GetMapping 等
+    # 简单的正则匹配 value = "/xxx" 或 ("/xxx")
+    pattern = re.compile(r'@(?:Request|Post|Get|Put|Delete)Mapping\s*\(.*?(?:value\s*=\s*)?"([^"]+)".*?\)')
+    
+    # 搜索变更内容（新增或修改的行）
+    for line in diff_text.splitlines():
+        if line.startswith("+") or line.startswith(" "): # 关注新增行或上下文
+            matches = pattern.findall(line)
+            for m in matches:
+                paths.add(m)
+    return paths
+
+def search_api_usages(root_dir, api_path, exclude_file):
+    """
+    在项目中搜索谁调用了这个 API
+    """
+    usages = []
+    print(f"[Link Analysis] 正在搜索全项目对接口 '{api_path}' 的调用...")
+    
+    for root, dirs, files in os.walk(root_dir):
+        # 忽略 git 目录和 target 目录
+        if ".git" in dirs: dirs.remove(".git")
+        if "target" in dirs: dirs.remove("target")
+        
+        for file in files:
+            if file.endswith(".java"):
+                full_path = os.path.join(root, file)
+                # 排除自己
+                if os.path.abspath(full_path) == os.path.abspath(exclude_file):
+                    continue
+                    
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if api_path in content:
+                            # 简单的包含匹配，找到调用者
+                            # 提取微服务模块名 (假设目录结构是 d:\root\service-name\src\...)
+                            rel_path = os.path.relpath(full_path, root_dir)
+                            service_name = rel_path.split(os.sep)[0]
+                            usages.append(f"服务 [{service_name}] -> 文件 {os.path.basename(file)}")
+                except:
+                    pass
+    return usages
+
 def analyze_with_llm(filename, diff_content):
+    # 先打印代码对比
+    print_code_comparison(diff_content)
+    
+    # --- 新增: 跨服务链路分析 ---
+    project_root = os.getcwd() # 假设当前在项目根目录
+    api_paths = extract_api_paths(diff_content)
+    downstream_callers = []
+    
+    if api_paths:
+        for api in api_paths:
+            callers = search_api_usages(project_root, api, filename)
+            if callers:
+                downstream_callers.extend(callers)
+    
+    downstream_info = "\n".join(downstream_callers) if downstream_callers else "未检测到明显的跨服务调用引用。"
+    print(f"[Link Analysis] 发现潜在下游调用方:\n{downstream_info}")
+    # ---------------------------
+
     print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...")
     
     prompt = f"""
     # Role
-    你是一名资深的 Java 测试开发工程师。
+    你是一名资深的 Java 测试架构师，精通微服务调用链路分析。
     
-    # Task
-    开发人员修改了文件: {filename}。请根据提供的 Git Diff 分析变更内容，并给出测试建议。
+    # Context
+    这是一个基于 Spring Cloud 的微服务项目 (Monorepo)。
+    被修改的文件: {filename}
+    
+    # Cross-Service Impact (关键!)
+    脚本检测到该变更可能影响以下下游服务（调用方）:
+    {downstream_info}
     
     # Git Diff
     {diff_content}
     
     # Requirement
-    请返回一个纯 JSON 格式的响应，不要包含 Markdown 格式化（如 ```json），格式如下：
+    请基于代码变更和**跨服务调用关系**，生成《微服务精准测试手册》。
+    如果存在跨服务调用，请重点分析接口契约变更带来的风险。
+    
+    请严格按照以下 JSON 格式返回：
     {{
-        "summary": "一句话概括变更内容",
-        "impact": "分析可能受影响的功能模块",
-        "risk_level": "HIGH/MEDIUM/LOW",
-        "test_cases": [
-            "测试用例1",
-            "测试用例2",
-            "测试用例3"
+        "code_review_warning": "代码审查警示",
+        "change_intent": "变更意图",
+        "risk_level": "CRITICAL/HIGH/MEDIUM/LOW",
+        "cross_service_impact": "跨服务影响分析 (请详细描述如果接口变了，下游 {downstream_info} 会发生什么故障)",
+        "test_strategy": [
+            {{
+                "title": "测试场景",
+                "priority": "P0/P1",
+                "steps": "步骤",
+                "payload": "Payload",
+                "validation": "验证点"
+            }}
         ]
     }}
     """
@@ -204,15 +318,37 @@ def main():
             continue
             
         if report:
-            print("-" * 40)
-            print(f"【分析报告】: {filename}")
-            print(f"变更摘要: {report.get('summary', 'N/A')}")
-            print(f"风险等级: {report.get('risk_level', 'N/A')}")
-            print(f"影响分析: {report.get('impact', 'N/A')}")
-            print("测试建议:")
-            for idx, suggestion in enumerate(report.get('test_cases', []), 1):
-                print(f"  {idx}. {suggestion}")
-            print("-" * 40)
+            print("=" * 80)
+            print(f"【精准测试作战手册】: {filename}")
+            
+            warning = report.get('code_review_warning')
+            if warning:
+                print(f"\n[WARNING] CODE REVIEW 警示: {warning}")
+            
+            print(f"\n[Change Analysis] 变更分析:")
+            print(f"  * 意图推测: {report.get('change_intent', 'N/A')}")
+            print(f"  * 风险等级: {report.get('risk_level', 'N/A')}")
+            print(f"  * 跨服务影响: {report.get('cross_service_impact', 'N/A')}")
+            
+            # 兼容旧字段
+            impact = report.get('impact_analysis', {})
+            if isinstance(impact, dict):
+                print(f"  * 影响功能: {impact.get('functional', '-')}")
+                print(f"  * 下游依赖: {impact.get('downstream', '-')}")
+
+            print("\n[Test Strategy] 测试策略矩阵:")
+            strategies = report.get('test_strategy', [])
+            if strategies:
+                print(f"{'优先级':<6} | {'场景标题':<20} | {'Payload示例':<30} | {'验证点'}")
+                print("-" * 100)
+                for s in strategies:
+                    prio = s.get('priority', '-')
+                    title = s.get('title', '-')
+                    payload = str(s.get('payload', '-')).replace('\n', '')[:30] + "..."
+                    val = s.get('validation', '-')
+                    print(f"{prio:<6} | {title:<20} | {payload:<30} | {val}")
+            
+            print("=" * 80)
 
 if __name__ == "__main__":
     main()

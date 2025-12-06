@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 @FeignClient(name = "cloudE-pay-provider")
 public interface ApplePayClient {
 
-    @RequestMapping(value = "apple/recharge", method = RequestMethod.POST)
+    @RequestMapping(value = "apple/recharge_v2", method = RequestMethod.POST)
     BaseResult<Boolean> recharge(@RequestParam("userId") Long userId, @RequestParam("amount") Double amount);
 
 }
