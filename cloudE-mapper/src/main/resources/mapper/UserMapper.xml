@@ -367,4 +367,10 @@
       del_status = #{delStatus,jdbcType=BIT}
     where id = #{id,jdbcType=BIGINT}
   </update>
+  <update id="updateUserPointFreeze" parameterType="map">
+    update user
+    set point_balance = point_balance - #{amount,jdbcType=INTEGER}
+    where id = #{userId,jdbcType=BIGINT}
+    and point_balance >= #{amount,jdbcType=INTEGER}
+  </update>
 </mapper>

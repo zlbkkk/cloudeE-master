@@ -31,12 +31,21 @@ public interface PointClient {
      * @return 处理结果映射表
      */
     @RequestMapping(value = "/point/batch/update", method = RequestMethod.POST)
-    BaseResult<Map<Long, Boolean>> batchUpdatePoints(
+    BaseResult<Map<Long, Boolean>> ·(
             @RequestParam("userIds") List<Long> userIds,
             @RequestParam("amount") Integer amount,
             @RequestParam("operationType") String operationType,
             @RequestParam("source") String source,
             @RequestParam(value = "async", defaultValue = "false") Boolean async,
             @RequestParam(value = "extraInfo", required = false) String extraInfo
+    );
+
+    /**
+     * 冻结用户积分 (新增接口)
+     */
+    @RequestMapping(value = "/point/freeze", method = RequestMethod.POST)
+    BaseResult<Boolean> freezePoints(
+            @RequestParam("userId") Long userId,
+            @RequestParam("amount") Integer amount
     );
 }
