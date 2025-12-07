@@ -355,11 +355,11 @@ def save_markdown_report(filename, report):
                 f.write(f"> ⚠️ **CODE REVIEW 警示**: {warning}\n\n")
             
             f.write("## 1. 变更分析\n")
-            f.write(f"- **意图推测**: {report.get('change_intent', 'N/A')}\n")
-            f.write(f"- **风险等级**: **{report.get('risk_level', 'N/A')}**\n")
-            f.write(f"- **跨服务影响**: {report.get('cross_service_impact', 'N/A')}\n")
-            f.write(f"- **影响功能**: {report.get('functional_impact', 'N/A')}\n")
-            f.write(f"- **下游依赖**: {report.get('downstream_dependency', 'N/A')}\n\n")
+            f.write(f"- **意图推测**: {format_field(report.get('change_intent', 'N/A'))}\n")
+            f.write(f"- **风险等级**: **{format_field(report.get('risk_level', 'N/A'))}**\n")
+            f.write(f"- **跨服务影响**: {format_field(report.get('cross_service_impact', 'N/A'))}\n")
+            f.write(f"- **影响功能**: {format_field(report.get('functional_impact', 'N/A'))}\n")
+            f.write(f"- **下游依赖**: {format_field(report.get('downstream_dependency', 'N/A'))}\n\n")
             
             f.write("## 2. 测试策略矩阵\n")
             f.write("| 优先级 | 场景标题 | Payload示例 | 验证点 |\n")
@@ -376,6 +376,14 @@ def save_markdown_report(filename, report):
         
     except Exception as e:
         console.print(f"[red]保存 Markdown 报告失败: {e}[/red]")
+
+def format_field(value):
+    """
+    格式化字段值，如果是字典或列表，转换为字符串
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    return str(value)
 
 def main():
     console.rule("[bold blue]精准测试分析助手 (DeepSeek版)[/bold blue]")
@@ -412,11 +420,11 @@ def main():
             grid = Table.grid(expand=True)
             grid.add_column(style="bold yellow", justify="right")
             grid.add_column(justify="left")
-            grid.add_row("意图推测:", report.get('change_intent', 'N/A'))
-            grid.add_row("风险等级:", report.get('risk_level', 'N/A'))
-            grid.add_row("跨服务影响:", report.get('cross_service_impact', 'N/A'))
-            grid.add_row("影响功能:", report.get('functional_impact', 'N/A'))
-            grid.add_row("下游依赖:", report.get('downstream_dependency', 'N/A'))
+            grid.add_row("意图推测:", format_field(report.get('change_intent', 'N/A')))
+            grid.add_row("风险等级:", format_field(report.get('risk_level', 'N/A')))
+            grid.add_row("跨服务影响:", format_field(report.get('cross_service_impact', 'N/A')))
+            grid.add_row("影响功能:", format_field(report.get('functional_impact', 'N/A')))
+            grid.add_row("下游依赖:", format_field(report.get('downstream_dependency', 'N/A')))
             
             console.print(Panel(grid, title="[Change Analysis] 变更分析", border_style="green"))
 
