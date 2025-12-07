@@ -4,6 +4,15 @@ import sys
 import json
 import urllib.request
 import urllib.error
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+from rich.style import Style
+from rich import box
+
+# 初始化 Rich Console
+console = Console()
 
 # --- DeepSeek API 配置 ---
 DEEPSEEK_API_KEY = "sk-onjbfk7nV3bpqi8hZD9stZ8AFlJ9eUu0dyP1iAEpeWdrlTAo"
@@ -33,11 +42,11 @@ def get_git_diff():
         )
         
         if result_staged.stdout and result_staged.stdout.strip():
-            print("[Info] 检测到暂存区 (Staged) 有代码变更，正在分析...")
+            console.print("[Info] 检测到暂存区 (Staged) 有代码变更，正在分析...", style="dim")
             return result_staged.stdout
 
         # 2. 如果暂存区没有 Java 变更，尝试获取最近一次提交
-        print("[Info] 暂存区无 Java 变更，尝试检查最近一次提交 (Last Commit)...")
+        console.print("[Info] 暂存区无 Java 变更，尝试检查最近一次提交 (Last Commit)...", style="dim")
         cmd_commit = ["git", "diff", "HEAD^", "HEAD", "--", "*.java"]
         result_commit = subprocess.run(
             cmd_commit, 
@@ -131,8 +140,7 @@ def print_code_comparison(diff_text):
     """
     打印直观的代码对比
     """
-    print("\n[Code Diff] 变更代码对比:")
-    print("-" * 80)
+    console.print(Panel("Code Diff: 变更代码对比", style="bold cyan", expand=False))
     
     lines = diff_text.splitlines()
     for line in lines:
@@ -142,19 +150,19 @@ def print_code_comparison(diff_text):
             
         if line.startswith("@@"):
             # 提取行号信息，增加可读性
-            print(f"\n[Line] {line}")
+            console.print(f"[dim]{line}[/dim]")
             continue
             
         if line.startswith("-"):
             # 删除的行 (OLD)
-            print(f"[-] {line[1:]}")
+            console.print(f"[red]{line}[/red]")
         elif line.startswith("+"):
             # 新增的行 (NEW)
-            print(f"[+] {line[1:]}")
+            console.print(f"[green]{line}[/green]")
         else:
             # 上下文行
-            print(f"    {line}")
-    print("-" * 80)
+            console.print(f"    {line}")
+    console.print("-" * 80, style="dim")
 
 import re
 
@@ -183,7 +191,7 @@ def search_api_usages(root_dir, api_path, exclude_file):
     在项目中搜索谁调用了这个 API
     """
     usages = []
-    print(f"[Link Analysis] 正在搜索全项目对接口 '{api_path}' 的调用...")
+    console.print(f"[bold blue][Link Analysis][/bold blue] 正在搜索全项目对接口 '[yellow]{api_path}[/yellow]' 的调用...")
     
     for root, dirs, files in os.walk(root_dir):
         # 忽略 git 目录和 target 目录
@@ -226,10 +234,12 @@ def analyze_with_llm(filename, diff_content):
                 downstream_callers.extend(callers)
     
     downstream_info = "\n".join(downstream_callers) if downstream_callers else "未检测到明显的跨服务调用引用。"
-    print(f"[Link Analysis] 发现潜在下游调用方:\n{downstream_info}")
+    
+    panel_content = f"[bold]发现潜在下游调用方:[/bold]\n{downstream_info}"
+    console.print(Panel(panel_content, title="Link Analysis", border_style="blue", expand=False))
     # ---------------------------
 
-    print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...")
+    console.print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...", style="bold magenta")
     
     prompt = f"""
     # Role
@@ -294,19 +304,55 @@ def analyze_with_llm(filename, diff_content):
             "test_cases": ["请查看控制台原始输出"]
         }
 
+def save_markdown_report(filename, report):
+    """
+    将分析结果保存为 Markdown 文件
+    """
+    safe_name = os.path.basename(filename).replace('.java', '')
+    report_file = f"TEST_REPORT_{safe_name}.md"
+    
+    try:
+        with open(report_file, 'w', encoding='utf-8') as f:
+            f.write(f"# 精准测试分析报告: {os.path.basename(filename)}\n\n")
+            
+            warning = report.get('code_review_warning')
+            if warning:
+                f.write(f"> ⚠️ **CODE REVIEW 警示**: {warning}\n\n")
+            
+            f.write("## 1. 变更分析\n")
+            f.write(f"- **意图推测**: {report.get('change_intent', 'N/A')}\n")
+            f.write(f"- **风险等级**: **{report.get('risk_level', 'N/A')}**\n")
+            f.write(f"- **跨服务影响**: {report.get('cross_service_impact', 'N/A')}\n\n")
+            
+            f.write("## 2. 测试策略矩阵\n")
+            f.write("| 优先级 | 场景标题 | Payload示例 | 验证点 |\n")
+            f.write("|---|---|---|---|\n")
+            
+            for s in report.get('test_strategy', []):
+                prio = s.get('priority', '-')
+                title = s.get('title', '-')
+                payload = str(s.get('payload', '-')).replace('\n', ' ')
+                val = s.get('validation', '-')
+                f.write(f"| {prio} | {title} | `{payload}` | {val} |\n")
+                
+        console.print(f"[dim]已保存测试报告至文件: [link=file://{os.getcwd()}/{report_file}]{report_file}[/link][/dim]")
+        
+    except Exception as e:
+        console.print(f"[red]保存 Markdown 报告失败: {e}[/red]")
+
 def main():
-    print("=== 精准测试分析助手 (DeepSeek版) ===")
+    console.rule("[bold blue]精准测试分析助手 (DeepSeek版)[/bold blue]")
     
     # 1. 获取 Diff
     diff_text = get_git_diff()
     if not diff_text:
-        print("未检测到 Java 文件的变更 (Git Diff 为空)。")
-        print("提示：请确保你已经 commit 了你的代码变更。")
+        console.print("[yellow]未检测到 Java 文件的变更 (Git Diff 为空)。[/yellow]")
+        console.print("提示：请确保你已经 commit 了你的代码变更。")
         return
 
     # 2. 解析 Diff
     files_map = parse_diff(diff_text)
-    print(f"检测到 {len(files_map)} 个 Java 文件发生变更。\n")
+    console.print(f"[green]检测到 {len(files_map)} 个 Java 文件发生变更。[/green]\n")
 
     # 3. 逐个分析
     for filename, content in files_map.items():
@@ -314,41 +360,58 @@ def main():
             report = analyze_with_llm(filename, content)
         else:
             # Fallback (如果不使用 API)
-            print("API 开关未打开")
+            console.print("API 开关未打开")
             continue
             
         if report:
-            print("=" * 80)
-            print(f"【精准测试作战手册】: {filename}")
+            console.print("\n")
+            console.rule(f"【精准测试作战手册】: {filename}")
             
             warning = report.get('code_review_warning')
             if warning:
-                print(f"\n[WARNING] CODE REVIEW 警示: {warning}")
+                console.print(Panel(f"[bold red]CODE REVIEW 警示:[/bold red] {warning}", border_style="red"))
             
-            print(f"\n[Change Analysis] 变更分析:")
-            print(f"  * 意图推测: {report.get('change_intent', 'N/A')}")
-            print(f"  * 风险等级: {report.get('risk_level', 'N/A')}")
-            print(f"  * 跨服务影响: {report.get('cross_service_impact', 'N/A')}")
+            # Change Analysis
+            grid = Table.grid(expand=True)
+            grid.add_column(style="bold yellow", justify="right")
+            grid.add_column(justify="left")
+            grid.add_row("意图推测:", report.get('change_intent', 'N/A'))
+            grid.add_row("风险等级:", report.get('risk_level', 'N/A'))
+            grid.add_row("跨服务影响:", report.get('cross_service_impact', 'N/A'))
             
             # 兼容旧字段
             impact = report.get('impact_analysis', {})
             if isinstance(impact, dict):
-                print(f"  * 影响功能: {impact.get('functional', '-')}")
-                print(f"  * 下游依赖: {impact.get('downstream', '-')}")
+                grid.add_row("影响功能:", impact.get('functional', '-'))
+                grid.add_row("下游依赖:", impact.get('downstream', '-'))
+            
+            console.print(Panel(grid, title="[Change Analysis] 变更分析", border_style="green"))
 
-            print("\n[Test Strategy] 测试策略矩阵:")
+            # Test Strategy Table
             strategies = report.get('test_strategy', [])
             if strategies:
-                print(f"{'优先级':<6} | {'场景标题':<20} | {'Payload示例':<30} | {'验证点'}")
-                print("-" * 100)
+                table = Table(title="[Test Strategy] 测试策略矩阵", show_header=True, header_style="bold magenta", box=box.ROUNDED, expand=True)
+                table.add_column("优先级", style="cyan", width=8)
+                table.add_column("场景标题", style="bold")
+                table.add_column("Payload示例", style="dim")
+                table.add_column("验证点", style="green")
+
                 for s in strategies:
                     prio = s.get('priority', '-')
                     title = s.get('title', '-')
-                    payload = str(s.get('payload', '-')).replace('\n', '')[:30] + "..."
+                    payload = str(s.get('payload', '-')).replace('\n', '')
+                    # Truncate payload if too long for display
+                    if len(payload) > 40:
+                        payload = payload[:37] + "..."
                     val = s.get('validation', '-')
-                    print(f"{prio:<6} | {title:<20} | {payload:<30} | {val}")
+                    table.add_row(prio, title, payload, val)
+                
+                console.print(table)
             
-            print("=" * 80)
+            # --- 保存 Markdown 报告 ---
+            save_markdown_report(filename, report)
+
+            console.print("=" * 80)
 
 if __name__ == "__main__":
     main()
