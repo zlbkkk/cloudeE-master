@@ -10,6 +10,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.style import Style
 from rich import box
+from rich.syntax import Syntax
 
 # 初始化 Rich Console
 console = Console()
@@ -23,7 +24,7 @@ DEEPSEEK_MODEL = "deepseek-chat"
 USE_DEEPSEEK_API = True
 
 def get_git_diff():
-    """
+    """·
     获取 Git Diff 信息
     策略:
     1. 检查最近一次提交 (Last Commit) 的变更 (git diff HEAD^ HEAD)
@@ -160,26 +161,12 @@ def print_code_comparison(diff_text):
     """
     console.print(Panel("Code Diff: 变更代码对比", style="bold cyan", expand=False))
     
-    lines = diff_text.splitlines()
-    for line in lines:
-        # 忽略 git diff 的元数据头
-        if line.startswith("diff --git") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
-            continue
-            
-        if line.startswith("@@"):
-            # 提取行号信息，增加可读性
-            console.print(f"[dim]{line}[/dim]")
-            continue
-            
-        if line.startswith("-"):
-            # 删除的行 (OLD)
-            console.print(f"[red]{line}[/red]")
-        elif line.startswith("+"):
-            # 新增的行 (NEW)
-            console.print(f"[green]{line}[/green]")
-        else:
-            # 上下文行
-            console.print(f"    {line}")
+    # 使用 Rich 的 Syntax 组件来高亮显示 Diff
+    # theme="monokai" 提供类似 IDE 的暗色主题体验
+    # background_color="default" 保持与终端背景一致
+    syntax = Syntax(diff_text, "diff", theme="monokai", line_numbers=True, word_wrap=True)
+    console.print(syntax)
+    
     console.print("-" * 80, style="dim")
 
 import re
@@ -427,7 +414,13 @@ def main():
                     # Truncate payload if too long for display
                     if len(payload) > 40:
                         payload = payload[:37] + "..."
+                    
                     val = s.get('validation', '-')
+                    # 格式化验证点：将 "1. xxx 2. xxx" 格式化为多行显示
+                    if isinstance(val, str):
+                         # 使用正则在数字列表项前添加换行 (排除开头的数字)
+                        val = re.sub(r'(?<!^)(\d+\.)', r'\n\1', val)
+                    
                     table.add_row(prio, title, payload, val)
                 
                 console.print(table)
