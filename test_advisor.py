@@ -34,8 +34,13 @@ def get_git_diff():
         # 1. 检查最近一次提交
         console.print("[Info] 检查最近一次提交 (Last Commit)...", style="dim")
         
-        # 先检查 HEAD^ HEAD 是否有 Java 变更
-        cmd_commit = ["git", "diff", "HEAD^", "HEAD", "--", "*.java"]
+        # 扩展监控的文件类型: Java, XML (MyBatis), SQL, YAML/Properties (Config)
+        file_patterns = ["*.java", "*.xml", "*.sql", "*.yml", "*.yaml", "*.properties"]
+        
+        # 构建 git diff 命令，包含所有关注的文件模式
+        # git diff HEAD^ HEAD -- *.java *.xml ...
+        cmd_commit = ["git", "diff", "HEAD^", "HEAD", "--"] + file_patterns
+        
         result_commit = subprocess.run(
             cmd_commit, 
             capture_output=True, 
@@ -47,27 +52,30 @@ def get_git_diff():
         if result_commit.stdout and result_commit.stdout.strip():
             return result_commit.stdout
 
-        # 3. 如果最近一次提交也没改 Java (可能只改了脚本/文档)，则向前追溯最近一次修改 Java 的提交
-        console.print("[Info] 最近一次提交未修改 Java 文件，正在追溯最近的 Java 变更记录...", style="dim")
+        # 3. 如果最近一次提交没有关注的文件变更，则向前追溯
+        console.print("[Info] 最近一次提交未修改关注的文件 (Java/XML/SQL/Config)，正在追溯最近的变更记录...", style="dim")
         
-        # 获取最近一次修改 *.java 的 commit hash
-        cmd_find_java_commit = ["git", "log", "-1", "--format=%H", "--", "*.java"]
+        # 获取最近一次修改关注文件的 commit hash
+        # git log -1 --format=%H -- *.java *.xml ...
+        cmd_find_commit = ["git", "log", "-1", "--format=%H", "--"] + file_patterns
+        
         result_find = subprocess.run(
-            cmd_find_java_commit,
+            cmd_find_commit,
             capture_output=True, 
             text=True, 
             encoding='utf-8',
             check=True
         )
         
-        last_java_commit_hash = result_find.stdout.strip()
+        last_commit_hash = result_find.stdout.strip()
         
-        if last_java_commit_hash:
-            console.print(f"[Info] 定位到最近一次 Java 变更提交: [bold cyan]{last_java_commit_hash[:7]}[/bold cyan]", style="dim")
-            # 获取该 commit 的 diff (与它的父节点对比)
-            cmd_java_diff = ["git", "diff", f"{last_java_commit_hash}^", last_java_commit_hash, "--", "*.java"]
-            result_java_diff = subprocess.run(
-                cmd_java_diff,
+        if last_commit_hash:
+            console.print(f"[Info] 定位到最近一次变更提交: [bold cyan]{last_commit_hash[:7]}[/bold cyan]", style="dim")
+            # 获取该 commit 的 diff
+            cmd_diff = ["git", "diff", f"{last_commit_hash}^", last_commit_hash, "--"] + file_patterns
+            
+            result_diff = subprocess.run(
+                cmd_diff,
                 capture_output=True, 
                 text=True, 
                 encoding='utf-8',
@@ -388,12 +396,12 @@ def analyze_with_llm(filename, diff_content):
         "cross_service_impact": "跨服务影响分析",
         "functional_impact": "详细的功能影响分析。请务必包含：1. 直接受影响的功能点；2. 潜在受影响的关联业务；3. 建议的回归测试范围。",
         "downstream_dependency": [
-            {{
+            {
                 "service_name": "服务名",
                 "file_path": "文件路径",
                 "line_number": "行号",
                 "impact_description": "该调用点可能受到的具体影响"
-            }}
+            }
         ],
         "test_strategy": [
             {{
@@ -507,7 +515,7 @@ def main():
 
     # 2. 解析 Diff
     files_map = parse_diff(diff_text)
-    console.print(f"[green]检测到 {len(files_map)} 个 Java 文件发生变更。[/green]\n")
+    console.print(f"[green]检测到 {len(files_map)} 个核心文件 (Java/XML/SQL/Config) 发生变更。[/green]\n")
 
     # 3. 逐个分析
     for filename, content in files_map.items():
