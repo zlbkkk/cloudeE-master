@@ -278,7 +278,24 @@ def search_api_usages(root_dir, api_info, exclude_file):
                         if found:
                             rel_path = os.path.relpath(full_path, root_dir)
                             service_name = rel_path.split(os.sep)[0]
-                            usages.append(f"服务 [{service_name}] -> 文件 {os.path.basename(file)}")
+                            
+                            # 获取行号
+                            line_num = 0
+                            context_snippet = ""
+                            for idx, line_content in enumerate(content.splitlines()):
+                                if (api_path and api_path in line_content) or \
+                                   (method_name and method_name in line_content and re.search(r'\b' + re.escape(method_name) + r'\b', line_content)):
+                                    line_num = idx + 1
+                                    context_snippet = line_content.strip()[:100] # 截取前100字符
+                                    break
+                            
+                            usages.append({
+                                "service": service_name,
+                                "file": os.path.basename(file),
+                                "path": rel_path,
+                                "line": line_num,
+                                "snippet": context_snippet
+                            })
                 except:
                     pass
     return usages
@@ -312,9 +329,24 @@ def analyze_with_llm(filename, diff_content):
             if callers:
                 downstream_callers.extend(callers)
     
-    # 去重
-    downstream_callers = list(set(downstream_callers))
-    downstream_info = "\n".join(downstream_callers) if downstream_callers else "未检测到明显的跨服务调用引用。"
+    # 去重 (基于文件路径)
+    unique_callers = {}
+    for caller in downstream_callers:
+        key = caller['path']
+        if key not in unique_callers:
+            unique_callers[key] = caller
+            
+    downstream_callers = list(unique_callers.values())
+    
+    if downstream_callers:
+        info_lines = []
+        for c in downstream_callers:
+            info_lines.append(f"- 服务: {c['service']}")
+            info_lines.append(f"  文件: {c['path']} (Line {c['line']})")
+            info_lines.append(f"  代码: {c['snippet']}")
+        downstream_info = "\n".join(info_lines)
+    else:
+        downstream_info = "未检测到明显的跨服务调用引用。"
     
     panel_content = f"[bold]发现潜在下游调用方:[/bold]\n{downstream_info}"
     console.print(Panel(panel_content, title="Link Analysis", border_style="blue", expand=False))
@@ -355,7 +387,14 @@ def analyze_with_llm(filename, diff_content):
         "risk_level": "CRITICAL/HIGH/MEDIUM/LOW",
         "cross_service_impact": "跨服务影响分析",
         "functional_impact": "详细的功能影响分析。请务必包含：1. 直接受影响的功能点；2. 潜在受影响的关联业务；3. 建议的回归测试范围。",
-        "downstream_dependency": "受影响的下游服务/组件列表",
+        "downstream_dependency": [
+            {
+                "service_name": "服务名",
+                "file_path": "文件路径",
+                "line_number": "行号",
+                "impact_description": "该调用点可能受到的具体影响"
+            }
+        ],
         "test_strategy": [
             {{
                 "title": "测试场景",
