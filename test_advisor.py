@@ -302,7 +302,8 @@ def search_api_usages(root_dir, api_info, exclude_file):
                                 "file": os.path.basename(file),
                                 "path": rel_path,
                                 "line": line_num,
-                                "snippet": context_snippet
+                                "snippet": context_snippet,
+                                "target_api": api_path or method_name # 记录触发搜索的 API 或方法名
                             })
                 except:
                     pass
@@ -337,10 +338,10 @@ def analyze_with_llm(filename, diff_content):
             if callers:
                 downstream_callers.extend(callers)
     
-    # 去重 (基于文件路径)
+    # 去重 (基于文件路径 + 目标API)
     unique_callers = {}
     for caller in downstream_callers:
-        key = caller['path']
+        key = f"{caller['path']}:{caller['target_api']}"
         if key not in unique_callers:
             unique_callers[key] = caller
             
@@ -349,7 +350,7 @@ def analyze_with_llm(filename, diff_content):
     if downstream_callers:
         info_lines = []
         for c in downstream_callers:
-            info_lines.append(f"- 服务: {c['service']}")
+            info_lines.append(f"- [调用 {c['target_api']}] 服务: {c['service']}")
             info_lines.append(f"  文件: {c['path']} (Line {c['line']})")
             info_lines.append(f"  代码: {c['snippet']}")
         downstream_info = "\n".join(info_lines)
