@@ -140,17 +140,19 @@ def call_deepseek_api(messages):
         with urllib.request.urlopen(req) as response:
             result = json.loads(response.read().decode('utf-8'))
             if 'choices' in result and len(result['choices']) > 0:
-                return result['choices'][0]['message']['content']
+                content = result['choices'][0]['message']['content']
+                usage = result.get('usage', {})
+                return content, usage
             else:
                 print("API 返回结果异常:", result)
-                return None
+                return None, None
             
     except urllib.error.HTTPError as e:
         print(f"API Error: {e.code} - {e.read().decode('utf-8')}")
-        return None
+        return None, None
     except Exception as e:
         print(f"Request Error: {e}")
-        return None
+        return None, None
 
 def print_code_comparison(diff_text):
     """
@@ -299,10 +301,16 @@ def analyze_with_llm(filename, diff_content):
         {"role": "user", "content": prompt}
     ]
     
-    response_content = call_deepseek_api(messages)
+    response_content, usage = call_deepseek_api(messages)
     
     if not response_content:
         return None
+    
+    if usage:
+        total = usage.get('total_tokens', 0)
+        prompt_tokens = usage.get('prompt_tokens', 0)
+        completion_tokens = usage.get('completion_tokens', 0)
+        console.print(f"[dim]DeepSeek Token Usage: Total {total} (Prompt {prompt_tokens} + Completion {completion_tokens})[/dim]")
         
     # 尝试解析 JSON
     try:
