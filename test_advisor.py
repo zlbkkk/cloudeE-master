@@ -438,9 +438,9 @@ def main():
                 table.add_column("验证点", style="green")
 
                 for s in strategies:
-                    prio = s.get('priority', '-')
-                    title = s.get('title', '-')
-                    payload = str(s.get('payload', '-')).replace('\n', '')
+                    prio = format_field(s.get('priority', '-'))
+                    title = format_field(s.get('title', '-'))
+                    payload = format_field(s.get('payload', '-')).replace('\n', '')
                     # Truncate payload if too long for display
                     if len(payload) > 40:
                         payload = payload[:37] + "..."
@@ -450,6 +450,8 @@ def main():
                     if isinstance(val, str):
                          # 使用正则在数字列表项前添加换行 (排除开头的数字)
                         val = re.sub(r'(?<!^)(\d+\.)', r'\n\1', val)
+                    else:
+                        val = format_field(val)
                     
                     table.add_row(prio, title, payload, val)
                 
