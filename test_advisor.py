@@ -102,7 +102,13 @@ def parse_diff(diff_text):
             parts = line.split()
             if len(parts) >= 4:
                 # 取 b/ 路径
-                current_file = parts[-1].lstrip("b/")
+                raw_filename = parts[-1]
+                # 安全移除 b/ 前缀
+                if raw_filename.startswith("b/"):
+                    current_file = raw_filename[2:]
+                else:
+                    current_file = raw_filename
+                
                 buffer = []
         
         buffer.append(line)
