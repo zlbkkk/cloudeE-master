@@ -26,27 +26,12 @@ def get_git_diff():
     """
     获取 Git Diff 信息
     策略:
-    1. 优先获取暂存区 (Staged) 的变更 (git diff --cached)
-    2. 如果暂存区为空，则获取最近一次提交的变更 (git diff HEAD^ HEAD)
+    1. 检查最近一次提交 (Last Commit) 的变更 (git diff HEAD^ HEAD)
+    2. 如果最近一次提交没有 Java 变更，则向前追溯最近一次修改 Java 的提交
     """
     try:
-        # 1. 尝试获取暂存区 (已 git add 但未 commit) 的 Java 变更
-        # --cached 表示获取暂存区的变更
-        cmd_staged = ["git", "diff", "--cached", "--", "*.java"]
-        result_staged = subprocess.run(
-            cmd_staged, 
-            capture_output=True, 
-            text=True, 
-            encoding='utf-8',
-            check=True
-        )
-        
-        if result_staged.stdout and result_staged.stdout.strip():
-            console.print("[Info] 检测到暂存区 (Staged) 有代码变更，正在分析...", style="dim")
-            return result_staged.stdout
-
-        # 2. 如果暂存区没有 Java 变更，尝试获取最近一次提交
-        console.print("[Info] 暂存区无 Java 变更，尝试检查最近一次提交 (Last Commit)...", style="dim")
+        # 1. 检查最近一次提交
+        console.print("[Info] 检查最近一次提交 (Last Commit)...", style="dim")
         
         # 先检查 HEAD^ HEAD 是否有 Java 变更
         cmd_commit = ["git", "diff", "HEAD^", "HEAD", "--", "*.java"]
