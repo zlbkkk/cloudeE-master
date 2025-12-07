@@ -19,6 +19,8 @@
     <result column="del_status" jdbcType="BIT" property="delStatus" />
     <!-- 新增字段映射: 积分余额 -->
     <result column="point_balance" jdbcType="INTEGER" property="pointBalance" />
+    <!-- 新增字段映射: 会员等级 -->
+    <result column="vip_level" jdbcType="INTEGER" property="vipLevel" />
   </resultMap>
   <sql id="Example_Where_Clause">
     <!--
@@ -95,7 +97,7 @@
       This element was generated on Mon Jul 24 13:56:47 CST 2017.
     -->
     id, username, password, status, reg_login_ip, last_login_ip, last_login_time, create_time, 
-    update_time, del_status, point_balance
+    update_time, del_status, point_balance, vip_level
   </sql>
   <select id="selectByExample" parameterType="com.cloudE.entity.UserExample" resultMap="BaseResultMap">
     <!--
