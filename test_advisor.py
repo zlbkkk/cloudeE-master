@@ -303,9 +303,10 @@ def analyze_with_llm(filename, diff_content):
     如果存在跨服务调用，请重点分析接口契约变更带来的风险。
     
     IMPORTANT:
-    在分析“下游依赖”或“影响功能”时，请务必基于上述提供的【项目包含的真实服务模块列表】。
-    禁止编造不存在的服务名称（如 cloudE-order-service 等，除非它们在列表中真实存在）。
-    如果某个潜在影响的服务不在列表中，请明确说明“未检测到相关服务”。
+    1. 在分析“下游依赖”或“影响功能”时，请务必基于上述提供的【项目包含的真实服务模块列表】。
+    2. 禁止编造不存在的服务名称（如 cloudE-order-service 等，除非它们在列表中真实存在）。
+    3. 如果某个潜在影响的服务不在列表中，请明确说明“未检测到相关服务”。
+    4. 返回的 JSON 必须严格符合标准格式。Payload 字段中的 JSON 示例必须是合法的 JSON，禁止使用 "[1-100]" 这种范围简写，请使用具体数值 "[1, 2, 3]"。
     
     請严格按照以下 JSON 格式返回：
     {{
@@ -346,7 +347,17 @@ def analyze_with_llm(filename, diff_content):
     # 尝试解析 JSON
     try:
         # 清理可能存在的 markdown 标记
-        cleaned_content = response_content.replace("```json", "").replace("```", "").strip()
+        cleaned_content = response_content.strip()
+        if cleaned_content.startswith("```json"):
+            cleaned_content = cleaned_content[7:]
+        elif cleaned_content.startswith("```"):
+            cleaned_content = cleaned_content[3:]
+        
+        if cleaned_content.endswith("```"):
+            cleaned_content = cleaned_content[:-3]
+            
+        cleaned_content = cleaned_content.strip()
+        
         return json.loads(cleaned_content)
     except json.JSONDecodeError:
         print("解析 AI 响应失败，原始响应:")
