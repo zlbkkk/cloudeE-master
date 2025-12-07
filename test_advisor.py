@@ -81,8 +81,8 @@ def get_git_diff():
                 encoding='utf-8',
                 check=True
             )
-            if result_java_diff.stdout and result_java_diff.stdout.strip():
-                return result_java_diff.stdout
+            if result_diff.stdout and result_diff.stdout.strip():
+                return result_diff.stdout
 
         return None
 
