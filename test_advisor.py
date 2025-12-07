@@ -245,12 +245,26 @@ def search_api_usages(root_dir, api_path, exclude_file):
                     pass
     return usages
 
+def get_project_structure(root_dir):
+    """
+    获取项目目录结构（一级子目录），作为 AI 的上下文
+    """
+    services = []
+    try:
+        for item in os.listdir(root_dir):
+            if os.path.isdir(os.path.join(root_dir, item)) and not item.startswith('.'):
+                services.append(item)
+    except:
+        pass
+    return ", ".join(services)
+
 def analyze_with_llm(filename, diff_content):
     # 先打印代码对比
     print_code_comparison(diff_content)
     
     # --- 新增: 跨服务链路分析 ---
     project_root = os.getcwd() # 假设当前在项目根目录
+    project_structure = get_project_structure(project_root)
     api_paths = extract_api_paths(diff_content)
     downstream_callers = []
     
@@ -274,6 +288,7 @@ def analyze_with_llm(filename, diff_content):
     
     # Context
     这是一个基于 Spring Cloud 的微服务项目 (Monorepo)。
+    项目包含的真实服务模块列表: [{project_structure}]
     被修改的文件: {filename}
     
     # Cross-Service Impact (关键!)
@@ -286,6 +301,11 @@ def analyze_with_llm(filename, diff_content):
     # Requirement
     请基于代码变更和**跨服务调用关系**，生成《微服务精准测试手册》。
     如果存在跨服务调用，请重点分析接口契约变更带来的风险。
+    
+    IMPORTANT:
+    在分析“下游依赖”或“影响功能”时，请务必基于上述提供的【项目包含的真实服务模块列表】。
+    禁止编造不存在的服务名称（如 cloudE-order-service 等，除非它们在列表中真实存在）。
+    如果某个潜在影响的服务不在列表中，请明确说明“未检测到相关服务”。
     
     請严格按照以下 JSON 格式返回：
     {{
