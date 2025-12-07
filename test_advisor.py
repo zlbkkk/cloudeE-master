@@ -521,12 +521,14 @@ def main():
     for filename, content in files_map.items():
         if USE_DEEPSEEK_API:
             report = analyze_with_llm(filename, content)
+            
+            # 强制清空上一轮的 report 引用 (虽然 Python 应该会自动回收，但为了保险)
+            if report is None: 
+                continue
         else:
             # Fallback (如果不使用 API)
             console.print("API 开关未打开")
             continue
-            
-        if report:
             console.print("\n")
             console.rule(f"【精准测试作战手册】: {filename}")
             
