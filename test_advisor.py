@@ -195,30 +195,59 @@ import re
 
 # ... (Previous imports)
 
-def extract_api_paths(diff_text):
+def extract_api_info(diff_text):
     """
-    从 Diff 中简单提取涉及的 API 路径 (基于 Spring 注解)
-    返回: set(['/recharge', '/user/get'])
+    从 Diff 中提取涉及的 API 路径和方法名
+    返回: list of dict [{'path': '/xxx', 'method': 'methodName'}]
     """
-    paths = set()
-    # 匹配 @RequestMapping, @PostMapping, @GetMapping 等
-    # 简单的正则匹配 value = "/xxx" 或 ("/xxx")
-    pattern = re.compile(r'@(?:Request|Post|Get|Put|Delete)Mapping\s*\(.*?(?:value\s*=\s*)?"([^"]+)".*?\)')
+    api_info_list = []
     
-    # 搜索变更内容（新增或修改的行）
-    for line in diff_text.splitlines():
-        if line.startswith("+") or line.startswith(" "): # 关注新增行或上下文
-            matches = pattern.findall(line)
-            for m in matches:
-                paths.add(m)
-    return paths
+    # 正则匹配: @RequestMapping(value = "/path") public Result methodName(...)
+    # 这是一个简化版的正则，处理多行情况比较复杂，这里先尝试匹配单行或邻近行
+    
+    lines = diff_text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("+") or line.startswith(" "):
+            # 尝试提取 @RequestMapping 中的路径
+            path_match = re.search(r'@(?:Request|Post|Get|Put|Delete)Mapping\s*\(.*?(?:value\s*=\s*)?"([^"]+)".*?\)', line)
+            if path_match:
+                api_path = path_match.group(1)
+                method_name = None
+                
+                # 向下找方法名 (假设方法定义在注解后的几行内)
+                for j in range(1, 5):
+                    if i + j < len(lines):
+                        next_line = lines[i+j]
+                        # 简单的 Java 方法定义匹配: public/protected/private ResultType methodName(
+                        # 忽略注解行
+                        if "@" in next_line:
+                            continue
+                        
+                        method_match = re.search(r'\s+([a-zA-Z0-9_]+)\s*\(', next_line)
+                        if method_match:
+                            method_name = method_match.group(1)
+                            # 过滤掉构造函数或类名 (通常首字母大写，方法名通常首字母小写，虽然不绝对)
+                            if method_name[0].islower(): 
+                                break
+                
+                if api_path:
+                    api_info_list.append({'path': api_path, 'method': method_name})
 
-def search_api_usages(root_dir, api_path, exclude_file):
+    return api_info_list
+
+def search_api_usages(root_dir, api_info, exclude_file):
     """
-    在项目中搜索谁调用了这个 API
+    在项目中搜索谁调用了这个 API (通过路径或方法名)
     """
     usages = []
-    console.print(f"[bold blue][Link Analysis][/bold blue] 正在搜索全项目对接口 '[yellow]{api_path}[/yellow]' 的调用...")
+    api_path = api_info.get('path')
+    method_name = api_info.get('method')
+    
+    search_term = f"API '{api_path}'"
+    if method_name:
+        search_term += f" 或方法 '{method_name}'"
+        
+    console.print(f"[bold blue][Link Analysis][/bold blue] 正在搜索全项目对 {search_term} 的调用...")
     
     for root, dirs, files in os.walk(root_dir):
         # 忽略 git 目录和 target 目录
@@ -235,9 +264,18 @@ def search_api_usages(root_dir, api_path, exclude_file):
                 try:
                     with open(full_path, 'r', encoding='utf-8') as f:
                         content = f.read()
-                        if api_path in content:
-                            # 简单的包含匹配，找到调用者
-                            # 提取微服务模块名 (假设目录结构是 d:\root\service-name\src\...)
+                        found = False
+                        # 1. 搜索 API 路径 (适用于 Controller 只有路径的情况，或者 RestTemplate 调用)
+                        if api_path and api_path in content:
+                            found = True
+                        
+                        # 2. 搜索方法名 (适用于 FeignClient 调用)
+                        if not found and method_name and method_name in content:
+                            # 简单的全词匹配，避免部分匹配
+                            if re.search(r'\b' + re.escape(method_name) + r'\b', content):
+                                found = True
+                        
+                        if found:
                             rel_path = os.path.relpath(full_path, root_dir)
                             service_name = rel_path.split(os.sep)[0]
                             usages.append(f"服务 [{service_name}] -> 文件 {os.path.basename(file)}")
@@ -265,15 +303,17 @@ def analyze_with_llm(filename, diff_content):
     # --- 新增: 跨服务链路分析 ---
     project_root = os.getcwd() # 假设当前在项目根目录
     project_structure = get_project_structure(project_root)
-    api_paths = extract_api_paths(diff_content)
+    api_info_list = extract_api_info(diff_content)
     downstream_callers = []
     
-    if api_paths:
-        for api in api_paths:
-            callers = search_api_usages(project_root, api, filename)
+    if api_info_list:
+        for api_info in api_info_list:
+            callers = search_api_usages(project_root, api_info, filename)
             if callers:
                 downstream_callers.extend(callers)
     
+    # 去重
+    downstream_callers = list(set(downstream_callers))
     downstream_info = "\n".join(downstream_callers) if downstream_callers else "未检测到明显的跨服务调用引用。"
     
     panel_content = f"[bold]发现潜在下游调用方:[/bold]\n{downstream_info}"
