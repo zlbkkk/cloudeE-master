@@ -37,3 +37,6 @@ build/
 ### Logs ###
 logs/
 *.log
+
+### Ignore local test project
+code_diff_project/
