@@ -287,13 +287,13 @@ def analyze_with_llm(filename, diff_content):
     请基于代码变更和**跨服务调用关系**，生成《微服务精准测试手册》。
     如果存在跨服务调用，请重点分析接口契约变更带来的风险。
     
-    请严格按照以下 JSON 格式返回：
+    請严格按照以下 JSON 格式返回：
     {{
         "code_review_warning": "代码审查警示",
         "change_intent": "变更意图",
         "risk_level": "CRITICAL/HIGH/MEDIUM/LOW",
-        "cross_service_impact": "跨服务影响分析 (请详细描述如果接口变了，下游 {downstream_info} 会发生什么故障)",
-        "functional_impact": "受影响的功能模块/业务场景",
+        "cross_service_impact": "跨服务影响分析",
+        "functional_impact": "详细的功能影响分析。请务必包含：1. 直接受影响的功能点；2. 潜在受影响的关联业务；3. 建议的回归测试范围。",
         "downstream_dependency": "受影响的下游服务/组件列表",
         "test_strategy": [
             {{
