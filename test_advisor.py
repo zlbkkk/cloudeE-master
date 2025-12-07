@@ -161,10 +161,26 @@ def print_code_comparison(diff_text):
     """
     console.print(Panel("Code Diff: 变更代码对比", style="bold cyan", expand=False))
     
+    # 过滤 Git 元数据头，只保留差异内容
+    lines = diff_text.splitlines()
+    clean_lines = []
+    for line in lines:
+        # 忽略 Git 元数据行
+        if line.startswith("diff --git") or \
+           line.startswith("index ") or \
+           line.startswith("--- ") or \
+           line.startswith("+++ ") or \
+           line.startswith("new file mode") or \
+           line.startswith("deleted file mode"):
+            continue
+        clean_lines.append(line)
+    
+    clean_diff = "\n".join(clean_lines)
+    
     # 使用 Rich 的 Syntax 组件来高亮显示 Diff
     # theme="monokai" 提供类似 IDE 的暗色主题体验
     # background_color="default" 保持与终端背景一致
-    syntax = Syntax(diff_text, "diff", theme="monokai", line_numbers=True, word_wrap=True)
+    syntax = Syntax(clean_diff, "diff", theme="monokai", line_numbers=True, word_wrap=True)
     console.print(syntax)
     
     console.print("-" * 80, style="dim")
