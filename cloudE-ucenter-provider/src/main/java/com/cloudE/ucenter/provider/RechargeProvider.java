@@ -13,6 +13,11 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 /**
  * @author vangao1989
  * @date 2017年7月26日
@@ -51,6 +56,45 @@ public class RechargeProvider {
         LOGGER.info("user {} recharge  res:{}", user.getUsername(), JSON.toJSONString(baseResult));
         return baseResult;
 
+    }
+
+    @HystrixCommand(fallbackMethod = "rechargeFallback")
+    @RequestMapping(value = "/recharge/batch", method = RequestMethod.POST)
+    public BaseResult<Boolean> batchRecharge(
+            @RequestParam @ApiParam(name = "userIds", value = "用户ID列表(逗号分隔)") String userIdsStr,
+            @RequestParam @ApiParam(name = "amount", value = "金额") Double amount,
+            @RequestParam @ApiParam(name = "source", value = "来源") String source) {
+
+        if (amount <= 0) {
+            return new BaseResult<>(false, "Amount must be > 0");
+        }
+
+        List<Long> userIds = Arrays.stream(userIdsStr.split(","))
+                .map(String::trim)
+                .map(Long::valueOf)
+                .collect(Collectors.toList());
+
+        LOGGER.info("Batch recharge for users: {}, amount: {}", userIds, amount);
+
+        // 调用复杂的积分批量更新接口
+        // 模拟 Dubbo/Feign 调用场景
+        try {
+            BaseResult<Map<Long, Boolean>> result = pointClient.batchUpdatePoints(
+                    userIds,
+                    amount.intValue(), # 简化转换
+                    "ADD",
+                    source,
+                    true, // async
+                    "{\"trigger\": \"RechargeProvider\", \"batchId\": \"" + System.currentTimeMillis() + "\"}"
+            );
+            
+            LOGGER.info("Batch point update result: {}", JSON.toJSONString(result));
+            return new BaseResult<>(true, "Batch recharge submitted");
+            
+        } catch (Exception e) {
+            LOGGER.error("Batch update failed", e);
+            return new BaseResult<>(false, "Batch update failed: " + e.getMessage());
+        }
     }
 
     private BaseResult<Boolean> rechargeFallback(Long useId, Double amount, String type, Throwable throwable) {
