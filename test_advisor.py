@@ -293,6 +293,8 @@ def analyze_with_llm(filename, diff_content):
         "change_intent": "变更意图",
         "risk_level": "CRITICAL/HIGH/MEDIUM/LOW",
         "cross_service_impact": "跨服务影响分析 (请详细描述如果接口变了，下游 {downstream_info} 会发生什么故障)",
+        "functional_impact": "受影响的功能模块/业务场景",
+        "downstream_dependency": "受影响的下游服务/组件列表",
         "test_strategy": [
             {{
                 "title": "测试场景",
@@ -355,7 +357,9 @@ def save_markdown_report(filename, report):
             f.write("## 1. 变更分析\n")
             f.write(f"- **意图推测**: {report.get('change_intent', 'N/A')}\n")
             f.write(f"- **风险等级**: **{report.get('risk_level', 'N/A')}**\n")
-            f.write(f"- **跨服务影响**: {report.get('cross_service_impact', 'N/A')}\n\n")
+            f.write(f"- **跨服务影响**: {report.get('cross_service_impact', 'N/A')}\n")
+            f.write(f"- **影响功能**: {report.get('functional_impact', 'N/A')}\n")
+            f.write(f"- **下游依赖**: {report.get('downstream_dependency', 'N/A')}\n\n")
             
             f.write("## 2. 测试策略矩阵\n")
             f.write("| 优先级 | 场景标题 | Payload示例 | 验证点 |\n")
@@ -411,12 +415,8 @@ def main():
             grid.add_row("意图推测:", report.get('change_intent', 'N/A'))
             grid.add_row("风险等级:", report.get('risk_level', 'N/A'))
             grid.add_row("跨服务影响:", report.get('cross_service_impact', 'N/A'))
-            
-            # 兼容旧字段
-            impact = report.get('impact_analysis', {})
-            if isinstance(impact, dict):
-                grid.add_row("影响功能:", impact.get('functional', '-'))
-                grid.add_row("下游依赖:", impact.get('downstream', '-'))
+            grid.add_row("影响功能:", report.get('functional_impact', 'N/A'))
+            grid.add_row("下游依赖:", report.get('downstream_dependency', 'N/A'))
             
             console.print(Panel(grid, title="[Change Analysis] 变更分析", border_style="green"))
 
