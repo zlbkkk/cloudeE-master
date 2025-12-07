@@ -529,6 +529,8 @@ def main():
             # Fallback (如果不使用 API)
             console.print("API 开关未打开")
             continue
+            
+        if report:
             console.print("\n")
             console.rule(f"【精准测试作战手册】: {filename}")
             
