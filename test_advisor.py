@@ -396,12 +396,12 @@ def analyze_with_llm(filename, diff_content):
         "cross_service_impact": "跨服务影响分析",
         "functional_impact": "详细的功能影响分析。请务必包含：1. 直接受影响的功能点；2. 潜在受影响的关联业务；3. 建议的回归测试范围。",
         "downstream_dependency": [
-            {
+            {{
                 "service_name": "服务名",
                 "file_path": "文件路径",
                 "line_number": "行号",
                 "impact_description": "该调用点可能受到的具体影响"
-            }
+            }}
         ],
         "test_strategy": [
             {{
