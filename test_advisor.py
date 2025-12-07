@@ -47,6 +47,8 @@ def get_git_diff():
 
         # 2. 如果暂存区没有 Java 变更，尝试获取最近一次提交
         console.print("[Info] 暂存区无 Java 变更，尝试检查最近一次提交 (Last Commit)...", style="dim")
+        
+        # 先检查 HEAD^ HEAD 是否有 Java 变更
         cmd_commit = ["git", "diff", "HEAD^", "HEAD", "--", "*.java"]
         result_commit = subprocess.run(
             cmd_commit, 
@@ -58,7 +60,36 @@ def get_git_diff():
         
         if result_commit.stdout and result_commit.stdout.strip():
             return result_commit.stdout
-            
+
+        # 3. 如果最近一次提交也没改 Java (可能只改了脚本/文档)，则向前追溯最近一次修改 Java 的提交
+        console.print("[Info] 最近一次提交未修改 Java 文件，正在追溯最近的 Java 变更记录...", style="dim")
+        
+        # 获取最近一次修改 *.java 的 commit hash
+        cmd_find_java_commit = ["git", "log", "-1", "--format=%H", "--", "*.java"]
+        result_find = subprocess.run(
+            cmd_find_java_commit,
+            capture_output=True, 
+            text=True, 
+            encoding='utf-8',
+            check=True
+        )
+        
+        last_java_commit_hash = result_find.stdout.strip()
+        
+        if last_java_commit_hash:
+            console.print(f"[Info] 定位到最近一次 Java 变更提交: [bold cyan]{last_java_commit_hash[:7]}[/bold cyan]", style="dim")
+            # 获取该 commit 的 diff (与它的父节点对比)
+            cmd_java_diff = ["git", "diff", f"{last_java_commit_hash}^", last_java_commit_hash, "--", "*.java"]
+            result_java_diff = subprocess.run(
+                cmd_java_diff,
+                capture_output=True, 
+                text=True, 
+                encoding='utf-8',
+                check=True
+            )
+            if result_java_diff.stdout and result_java_diff.stdout.strip():
+                return result_java_diff.stdout
+
         return None
 
     except subprocess.CalledProcessError:
