@@ -2,6 +2,7 @@ package com.cloudE.ucenter.manager;
 
 import com.cloudE.entity.User;
 import com.cloudE.mapper.UserMapper;
+import com.cloudE.pay.client.PointClient;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -14,12 +15,17 @@ public class UserManager {
     
     @Resource
     private PointManager pointManager;
-    
+
     @Resource
-    private com.cloudE.pay.client.PointClient pointClient;
+    private PointClient pointClient;
 
     public User getUserByUserId(Long userId) {
         return userMapper.selectByPrimaryKey(userId);
+    }
+    
+    public Integer getUserPoints(Long userId) {
+        // Downstream call to PointClient.getPoints
+        return pointClient.getPoints(userId).getData();
     }
     
     public void compensateUser(Long userId) {
@@ -27,9 +33,6 @@ public class UserManager {
         java.util.List<Long> ids = new java.util.ArrayList<>();
         ids.add(userId);
         pointManager.distributePointsBatch(ids, 50, "USER_COMPENSATION");
-        
-        // Direct call to PointClient (Cross-Service)
-        pointClient.addPoint(userId, 100, "COMPENSATION", 3600L, "REQ_" + userId);
     }
 
 }

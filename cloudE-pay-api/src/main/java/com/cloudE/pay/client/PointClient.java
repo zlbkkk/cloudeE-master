@@ -18,12 +18,14 @@ public interface PointClient {
             @RequestParam("points") Integer points, 
             @RequestParam("source") String source,
             @RequestParam(value = "expireSeconds", required = false) Long expireSeconds,
-            @RequestParam(value = "requestId") String requestId,
-            @RequestParam(value = "clientIp") String clientIp
+            @RequestParam(value = "requestId") String requestId
     );
 
     @RequestMapping(value = "/point/get", method = RequestMethod.GET)
-    BaseResult<Integer> getPoints(@RequestParam("userId") Long userId);
+    BaseResult<Integer> getPoints(
+            @RequestParam("userId") Long userId,
+            @RequestParam(value = "strictMode", defaultValue = "false") Boolean strictMode
+    );
 
     /**
      * 批量处理积分变动 (Complex Interface)

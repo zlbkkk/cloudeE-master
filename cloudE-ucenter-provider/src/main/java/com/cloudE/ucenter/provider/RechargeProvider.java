@@ -142,5 +142,21 @@ public class RechargeProvider {
         return new BaseResult<>(false, throwable.getMessage());
     }
 
+    public BaseResult<Boolean> rechargeFallback(Long userId, Double amount, String type) {
+        return new BaseResult<>(false, "Recharge Service is currently unavailable");
+    }
 
+    public BaseResult<Boolean> rechargeFallback(String userIdsStr, Double amount, String source) {
+        return new BaseResult<>(false, "Batch Recharge Service is currently unavailable");
+    }
+    
+    // New method calling PointClient.getPoints
+    public Integer checkUserBalance(Long userId) {
+        BaseResult<Integer> points = pointClient.getPoints(userId);
+        return points.getData();
+    }
+    
+    // Existing method
+    public void adminCompensatePoints(Long userId, Integer points) {
+    }
 }
