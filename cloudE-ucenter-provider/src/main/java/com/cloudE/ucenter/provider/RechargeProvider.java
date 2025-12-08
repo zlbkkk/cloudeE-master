@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
  * @date 2017年7月26日
  */
 @RestController
+@RequestMapping("/ucenter")
 public class RechargeProvider {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RechargeProvider.class);
