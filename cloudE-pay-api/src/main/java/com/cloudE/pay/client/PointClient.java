@@ -18,7 +18,8 @@ public interface PointClient {
             @RequestParam("points") Integer points, 
             @RequestParam("source") String source,
             @RequestParam(value = "expireSeconds", required = false) Long expireSeconds,
-            @RequestParam(value = "requestId") String requestId
+            @RequestParam(value = "requestId") String requestId,
+            @RequestParam(value = "clientIp") String clientIp
     );
 
     @RequestMapping(value = "/point/get", method = RequestMethod.GET)
