@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 // Re-build trigger
 import axios from 'axios';
 import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio } from 'antd';
@@ -888,6 +888,20 @@ function App() {
 
 // New Component: Project Overview
 const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
+    // Group reports by time (minute precision) to simulate Task Grouping
+    const groupedReports = useMemo(() => {
+        const groups = {};
+        reports.forEach(r => {
+            const date = new Date(r.created_at);
+            // Key: YYYY-MM-DD HH:mm
+            const key = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(r);
+        });
+        // Sort keys desc
+        return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+    }, [reports]);
+
     return (
         <div className="max-w-6xl mx-auto">
             <div className="mb-6">
@@ -895,28 +909,44 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                     <FolderOpenOutlined className="text-blue-500" />
                     {projectName}
                 </h1>
-                <p className="text-slate-500 mt-2">该项目共检测到 {reports.length} 个文件变更。</p>
+                <p className="text-slate-500 mt-2">该项目共检测到 {reports.length} 个文件变更记录。</p>
             </div>
             
-            <div className="grid grid-cols-3 gap-4">
-                {reports.map(report => {
-                    const renderRiskBadge = (level) => {
-                        const colors = { 'CRITICAL': 'text-red-600 bg-red-50', 'HIGH': 'text-orange-600 bg-orange-50', 'MEDIUM': 'text-yellow-600 bg-yellow-50', 'LOW': 'text-green-600 bg-green-50' };
-                        return <span className={`px-2 py-0.5 rounded text-xs font-bold ${colors[level]}`}>{level}</span>;
-                    };
-                    return (
-                        <div key={report.id} onClick={() => onSelectReport(report.id)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all">
-                            <div className="flex justify-between items-start mb-2">
-                                <FileTextOutlined className="text-2xl text-slate-400" />
-                                {renderRiskBadge(report.risk_level)}
-                            </div>
-                            <h3 className="font-bold text-slate-700 truncate mb-1" title={report.file_name}>{report.file_name}</h3>
-                            <div className="text-xs text-slate-400 flex items-center gap-1">
-                                <ClockCircleOutlined /> {new Date(report.created_at).toLocaleDateString()}
-                            </div>
+            <div className="space-y-8">
+                {groupedReports.map(([timeKey, groupReports]) => (
+                    <div key={timeKey} className="bg-slate-50/50 rounded-xl p-4 border border-slate-100">
+                        <div className="flex items-center gap-2 mb-4">
+                            <ClockCircleOutlined className="text-blue-500" />
+                            <span className="font-bold text-slate-700 text-sm">分析批次: {timeKey}</span>
+                            <span className="text-xs text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-100">
+                                {groupReports.length} 个文件
+                            </span>
                         </div>
-                    );
-                })}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {groupReports.map(report => {
+                                const renderRiskBadge = (level) => {
+                                    const colors = { 'CRITICAL': 'text-red-600 bg-red-50 border-red-100', 'HIGH': 'text-orange-600 bg-orange-50 border-orange-100', 'MEDIUM': 'text-yellow-600 bg-yellow-50 border-yellow-100', 'LOW': 'text-green-600 bg-green-50 border-green-100' };
+                                    return <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${colors[level]}`}>{level}</span>;
+                                };
+                                return (
+                                    <div key={report.id} onClick={() => onSelectReport(report.id)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="p-2 rounded-lg bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
+                                                <FileTextOutlined className="text-xl" />
+                                            </div>
+                                            {renderRiskBadge(report.risk_level)}
+                                        </div>
+                                        <h3 className="font-bold text-slate-700 truncate mb-1 text-sm" title={report.file_name}>{report.file_name}</h3>
+                                        <div className="text-[10px] text-slate-400 flex items-center justify-between mt-2">
+                                            <span className="flex items-center gap-1"><ClockCircleOutlined /> {new Date(report.created_at).toLocaleTimeString()}</span>
+                                            <span className="font-mono">ID:{report.id}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
             </div>
         </div>
     );
@@ -936,15 +966,58 @@ const ReportDetail = ({ report }) => {
             const items = value.split(/(?=\d+\.\s)/).filter(item => item.trim());
             if (items.length > 1) {
                 return (
-                    <ul className="list-none space-y-2">
-                        {items.map((item, idx) => (
-                            <li key={idx} className="flex gap-2 items-start">
-                                <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
-                                    {idx + 1}
-                                </div>
-                                <span className="leading-6">{item.replace(/^\d+\.\s*/, '').replace(/;$/, '')}</span>
-                            </li>
-                        ))}
+                    <ul className="list-none space-y-3">
+                        {items.map((item, idx) => {
+                            // Check for sub-items (e.g. "(1) sub-item")
+                            const cleanItem = item.replace(/^\d+\.\s*/, '').replace(/;$/, '').trim();
+                            let mainContent = cleanItem;
+                            let subItems = [];
+
+                            // Support both English (1) and Chinese （1） parentheses
+                            // Use capturing group to split but keep the delimiters
+                            const splitRegex = /([\(（]\d+[\)）])/;
+                            if (cleanItem.match(splitRegex)) {
+                                const parts = cleanItem.split(splitRegex);
+                                // parts will look like: ["Main text", "(1)", "Sub text 1", "(2)", "Sub text 2"]
+                                if (parts.length > 1) {
+                                    mainContent = parts[0].trim();
+                                    
+                                    // Reconstruct sub-items
+                                    subItems = [];
+                                    for (let i = 1; i < parts.length; i += 2) {
+                                        // parts[i] is the marker e.g. "(1)"
+                                        // parts[i+1] is the content
+                                        if (i + 1 < parts.length) {
+                                            const content = parts[i+1].trim();
+                                            if (content) {
+                                                subItems.push(content);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            return (
+                                <li key={idx} className="flex gap-2 items-start">
+                                    <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
+                                        {idx + 1}
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="leading-6 font-medium text-slate-700">{mainContent}</div>
+                                        {subItems.length > 0 && (
+                                            <ul className="mt-1.5 space-y-1 ml-1">
+                                                {subItems.map((sub, sIdx) => (
+                                                    <li key={sIdx} className="text-xs text-slate-500 flex gap-2 items-start bg-slate-50 p-1.5 rounded border border-slate-100/50">
+                                                        <span className="font-mono text-green-600 font-bold opacity-70">({sIdx + 1})</span>
+                                                        <span>{sub}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                </li>
+                            );
+                        })}
                     </ul>
                 );
             }
@@ -1150,15 +1223,31 @@ const ReportDetail = ({ report }) => {
                  rowKey="title" 
                  pagination={false} 
                  columns={[
-                    { title: '优先级', dataIndex: 'priority', width: 100, render: t => {
-                        const color = t === 'P0' ? 'bg-red-100 text-red-700' : t === 'P1' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700';
-                        return <span className={`px-2 py-1 rounded text-xs font-bold ${color}`}>{t}</span>;
-                    }},
-                    { title: '场景标题', dataIndex: 'title', width: 250, render: t => <b className="text-slate-800">{t}</b> },
-                    { title: 'Payload 示例', dataIndex: 'payload', render: t => <pre className="bg-slate-50 border border-slate-200 rounded p-2 text-[10px] text-slate-500 overflow-auto max-w-xs">{typeof t === 'object' ? JSON.stringify(t, null, 2) : t}</pre> },
-                    { title: '验证点', dataIndex: 'validation', render: t => <span className="text-sm text-slate-600">{t}</span> },
+                    { 
+                        title: '优先级', 
+                        dataIndex: 'priority', 
+                        width: 80,
+                        render: t => {
+                            const colors = { 'P0': 'text-red-600 bg-red-50 border-red-100', 'P1': 'text-orange-600 bg-orange-50 border-orange-100', 'P2': 'text-blue-600 bg-blue-50 border-blue-100' };
+                            return <span className={`px-2 py-0.5 rounded border text-xs font-bold ${colors[t] || 'text-slate-600 bg-slate-50'}`}>{t}</span>;
+                        }
+                    },
+                    { title: '场景标题', dataIndex: 'title', width: 180, render: t => <span className="font-bold text-slate-700">{t}</span> },
+                    { title: '测试步骤', dataIndex: 'steps', render: t => <div className="text-xs text-slate-600 whitespace-pre-wrap">{renderField(t)}</div> },
+                    { 
+                        title: 'Payload 示例', 
+                        dataIndex: 'payload', 
+                        width: 250,
+                        render: t => (
+                            <div className="bg-slate-50 rounded border border-slate-200 p-2 font-mono text-[10px] text-slate-600 max-h-32 overflow-y-auto custom-scrollbar">
+                                {typeof t === 'object' ? JSON.stringify(t, null, 2) : t}
+                            </div>
+                        )
+                    },
+                    { title: '验证点', dataIndex: 'validation', width: 200, render: t => <div className="text-xs text-slate-600">{renderField(t)}</div> }
                  ]}
                  size="middle"
+                 scroll={{ x: 'max-content' }}
               />
           </div>
       </div>

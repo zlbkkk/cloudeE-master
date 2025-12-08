@@ -42,7 +42,8 @@ public interface PointClient {
             @RequestParam("operationType") String operationType,
             @RequestParam("source") String source,
             @RequestParam(value = "async", defaultValue = "false") Boolean async,
-            @RequestParam(value = "extraInfo", required = false) String extraInfo
+            @RequestParam(value = "extraInfo", required = false) String extraInfo,
+            @RequestParam(value = "traceId", required = false) String traceId
     );
 
     /**

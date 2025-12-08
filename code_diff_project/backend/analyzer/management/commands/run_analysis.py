@@ -406,7 +406,7 @@ class Command(BaseCommand):
                 {{
                     "title": "<测试场景>",
                     "priority": "P0/P1",
-                    "steps": "<步骤>",
+                    "steps": "<详细测试步骤：包含前置条件、操作步骤（如接口调用、参数设置）>",
                     "payload": "<Payload示例 (必须是JSON格式)>",
                     "validation": "<验证点>"
                 }}
