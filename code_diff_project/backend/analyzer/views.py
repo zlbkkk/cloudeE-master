@@ -1,14 +1,17 @@
-from rest_framework import viewsets
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from django.core.management import call_command
-from django.conf import settings
+import logging
 import threading
 import os
 import subprocess
 import traceback
+from django.conf import settings
+from django.core.management import call_command
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from .models import AnalysisReport, AnalysisTask
 from .serializers import AnalysisReportSerializer, AnalysisTaskSerializer
+
+logger = logging.getLogger(__name__)
 
 class AnalysisTaskViewSet(viewsets.ModelViewSet):
     queryset = AnalysisTask.objects.all()
@@ -51,7 +54,7 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
                 
                 if mode == 'git':
                     if not git_url:
-                        print("[Error] Git URL required for git mode")
+                        logger.error("[Error] Git URL required for git mode")
                         task.status = 'FAILED'
                         task.log_details += "[Error] Git URL required for git mode\n"
                         task.save()
@@ -71,24 +74,24 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
                     task.save()
 
                     if not os.path.exists(repo_path):
-                        print(f"[Info] Cloning {git_url} to {repo_path}...")
+                        logger.info(f"[Info] Cloning {git_url} to {repo_path}...")
                         task.log_details += f"正在克隆代码仓库...\n"
                         task.save()
                         subprocess.check_call(["git", "clone", git_url, repo_path])
                     else:
-                        print(f"[Info] Fetching updates in {repo_path}...")
+                        logger.info(f"[Info] Fetching updates in {repo_path}...")
                         task.log_details += f"正在更新代码仓库...\n"
                         task.save()
                         subprocess.check_call(["git", "fetch", "--all"], cwd=repo_path)
                     
                     # Checkout working branch to ensure workspace has the correct context
                     if target_branch and target_branch != 'HEAD':
-                        print(f"[Info] Checking out working branch: {target_branch}")
+                        logger.info(f"[Info] Checking out working branch: {target_branch}")
                         task.log_details += f"切换分支到: {target_branch}\n"
                         task.save()
                         subprocess.check_call(["git", "reset", "--hard", "HEAD"], cwd=repo_path)
                         subprocess.check_call(["git", "checkout", target_branch], cwd=repo_path)
-                        print(f"[Info] Resetting to origin/{target_branch}...")
+                        logger.info(f"[Info] Resetting to origin/{target_branch}...")
                         subprocess.check_call(["git", "reset", "--hard", f"origin/{target_branch}"], cwd=repo_path)
                 
                 # Run analysis comparing Base Commit vs Target Commit
@@ -106,7 +109,7 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
 
             except Exception as e:
                 error_msg = f"Analysis failed: {str(e)}\n{traceback.format_exc()}"
-                print(f"[Error] {error_msg}")
+                logger.error(f"[Error] {error_msg}")
                 task = AnalysisTask.objects.get(id=task_id)
                 task.status = 'FAILED'
                 task.log_details += error_msg
@@ -125,7 +128,7 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='git-branches')
     def fetch_git_branches(self, request):
         repo_url = request.data.get('git_url')
-        print(f"[Info] Fetching branches for: {repo_url}")
+        logger.info(f"[Info] Fetching branches for: {repo_url}")
         if not repo_url:
             return Response({"error": "Git URL is required"}, status=400)
         
@@ -138,12 +141,12 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
             branches = set()
             
             if os.path.exists(repo_path):
-                print(f"[Info] Reading branches from local repo: {repo_path}")
+                logger.info(f"[Info] Reading branches from local repo: {repo_path}")
                 # Fetch latest branches from remote
                 try:
                     subprocess.check_call(["git", "fetch", "--all"], cwd=repo_path)
                 except Exception as fetch_err:
-                    print(f"[Warning] Git fetch failed: {fetch_err}")
+                    logger.warning(f"[Warning] Git fetch failed: {fetch_err}")
 
                 cmd = ["git", "branch", "-a"]
                 result = subprocess.check_output(cmd, cwd=repo_path, text=True, stderr=subprocess.STDOUT, encoding='utf-8')
@@ -171,14 +174,14 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
                         branches.add(name)
 
             sorted_branches = sorted(list(branches))
-            print(f"[Info] Found {len(sorted_branches)} branches.")
+            logger.info(f"[Info] Found {len(sorted_branches)} branches.")
             return Response({"branches": sorted_branches})
         except subprocess.CalledProcessError as e:
             error_msg = f"Git command failed: {e.output}"
-            print(f"[Error] {error_msg}")
+            logger.error(f"[Error] {error_msg}")
             return Response({"error": error_msg}, status=500)
         except Exception as e:
-            print(f"[Error] Unexpected error: {str(e)}")
+            logger.error(f"[Error] Unexpected error: {str(e)}")
             return Response({"error": str(e)}, status=500)
 
     @action(detail=False, methods=['post'], url_path='git-commits')
@@ -200,7 +203,7 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
                 # branches endpoint usually clones if needed.
                 return Response({"error": "Repository not found locally. Please fetch branches first."}, status=400)
             
-            print(f"[Info] Fetching commits for {branch} in {repo_path}")
+            logger.info(f"[Info] Fetching commits for {branch} in {repo_path}")
             
             # Ensure we have latest info
             subprocess.check_call(["git", "fetch", "--all"], cwd=repo_path)
@@ -224,8 +227,8 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
             
             return Response({"commits": commits})
         except subprocess.CalledProcessError as e:
-            print(f"[Error] Git log failed: {e.output}")
+            logger.error(f"[Error] Git log failed: {e.output}")
             return Response({"error": f"Failed to fetch commits: {e.output}"}, status=500)
         except Exception as e:
-            print(f"[Error] {e}")
+            logger.error(f"[Error] {e}")
             return Response({"error": str(e)}, status=500)

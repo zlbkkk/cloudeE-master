@@ -1,6 +1,7 @@
 from django.db import models
 
 class AnalysisReport(models.Model):
+    task = models.ForeignKey('AnalysisTask', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="关联任务")
     project_name = models.CharField(max_length=255, verbose_name="项目名称", default="Unknown Project")
     file_name = models.CharField(max_length=255, verbose_name="文件名")
     change_intent = models.TextField(verbose_name="变更意图", null=True, blank=True)

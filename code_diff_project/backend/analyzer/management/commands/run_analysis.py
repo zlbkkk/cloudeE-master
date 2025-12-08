@@ -88,8 +88,16 @@ class Command(BaseCommand):
                     report = self.analyze_with_llm(filename, content, project_root, task_id)
                     
                     if report is None: 
-                        self.update_task_log(task_id, f"文件 {filename} 分析失败或无结果。")
-                        continue
+                        self.update_task_log(task_id, f"文件 {filename} 分析失败，生成基础占位报告。")
+                        # Create a fallback report so the file still appears in the list
+                        report = {
+                            "change_intent": "AI 分析失败 (API Error or Timeout)",
+                            "risk_level": "UNKNOWN",
+                            "cross_service_impact": "无法分析",
+                            "functional_impact": "无法分析",
+                            "downstream_dependency": [],
+                            "test_strategy": []
+                        }
                 else:
                     console.print("API 开关未打开")
                     continue
@@ -142,7 +150,7 @@ class Command(BaseCommand):
                     
                     # --- 保存至数据库 ---
                     project_name = os.path.basename(project_root)
-                    self.save_to_db(filename, report, content, project_name=project_name)
+                    self.save_to_db(filename, report, content, project_name=project_name, task_id=task_id)
                     self.update_task_log(task_id, f"文件 {filename} 分析完成并保存。")
 
         except Exception as e:
@@ -158,13 +166,20 @@ class Command(BaseCommand):
                 except: pass
             raise e
 
-    def save_to_db(self, filename, report, diff_content, project_name="Unknown"):
+    def save_to_db(self, filename, report, diff_content, project_name="Unknown", task_id=None):
         """
         直接保存到 Django 数据库
         """
         try:
+            task_obj = None
+            if task_id:
+                try:
+                    task_obj = AnalysisTask.objects.get(id=task_id)
+                except: pass
+
             AnalysisReport.objects.create(
                 project_name=project_name,
+                task=task_obj,
                 file_name=os.path.basename(filename),
                 change_intent=self.format_field(report.get('change_intent', '')),
                 risk_level=str(report.get('risk_level', 'UNKNOWN')),
@@ -257,17 +272,78 @@ class Command(BaseCommand):
         
         # Static Analysis Integration
         static_context = ""
+        static_usages = []
         try:
             if filename.endswith(".java"):
                 full_path = os.path.join(root_dir, filename)
                 analyzer = LightStaticAnalyzer(root_dir)
-                static_context = analyzer.get_context_for_file(full_path)
+                # Unpack the tuple: (text_context, usages_list)
+                static_context, static_usages = analyzer.get_context_for_file(full_path)
+                
                 if static_context:
                     console.print(Panel(static_context.strip(), title="Static Analysis", border_style="green"))
                     self.update_task_log(task_id, "[Static Analysis] 静态分析上下文获取成功。")
+                
+                # Merge static usages into downstream_callers
+                if static_usages:
+                    for usage in static_usages:
+                        downstream_callers.append({
+                            "service": usage['service'],
+                            "file": usage['file_name'],
+                            "path": usage['path'],
+                            "line": usage.get('line', 0),
+                            "snippet": usage.get('snippet', f"Detected by Static Analysis ({usage['type']})"),
+                            "target_api": "Class Dependency"
+                        })
+                        
         except Exception as e:
             console.print(f"[yellow]Static analysis skipped: {e}[/yellow]")
             self.update_task_log(task_id, f"[Warning] Static analysis skipped: {e}")
+
+        # Re-deduplicate after merging static usages
+        unique_callers = {}
+        
+        # Determine current service name from filename (assuming first folder is service name)
+        current_service = filename.split('/')[0] if '/' in filename else filename.split('\\')[0]
+        
+        filtered_callers = []
+        final_callers = []
+
+        for caller in downstream_callers:
+            key = f"{caller['path']}:{caller['target_api']}"
+            if key not in unique_callers:
+                caller['target_service'] = current_service
+                unique_callers[key] = caller
+                
+                # Check if internal
+                if caller['service'] == current_service:
+                    caller['is_internal'] = True
+                    filtered_callers.append(caller)
+                else:
+                    caller['is_internal'] = False
+                
+                # We now keep ALL callers for the AI context, just marked
+                final_callers.append(caller)
+
+        downstream_callers = final_callers
+        
+        if filtered_callers:
+            count = len(filtered_callers)
+            console.print(f"[Info] 检测到 {count} 个同服务内部调用 (Internal Calls)，将包含在分析上下文中。", style="dim")
+            self.update_task_log(task_id, f"[Link Analysis] 检测到 {count} 个同服务内部调用。")
+        
+        downstream_info = "未检测到明显的调用引用。"
+        if downstream_callers:
+            info_lines = []
+            for c in downstream_callers:
+                type_tag = "[内部调用]" if c.get('is_internal') else "[跨服务调用]"
+                info_lines.append(f"- {type_tag} 服务: {c['service']}")
+                info_lines.append(f"  文件: {c['path']}")
+                info_lines.append(f"  说明: {c['snippet']} (Line: {c.get('line', 'N/A')})")
+            downstream_info = "\n".join(info_lines)
+        
+        console.print(Panel(f"[bold]发现潜在下游调用方 (Combined & Filtered):[/bold]\n{downstream_info}", title="Link Analysis", border_style="blue", expand=False))
+        self.update_task_log(task_id, f"[Link Analysis] 发现 {len(downstream_callers)} 个潜在跨服务调用点。")
 
         console.print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...", style="bold magenta")
         self.update_task_log(task_id, f"[AI Analysis] 正在请求 AI 分析...")
@@ -278,14 +354,16 @@ class Command(BaseCommand):
         
         # Static Analysis Hints (Hard Facts - 静态分析结果)
         {static_context}
+        注意: "Class A is used by B" 意味着 B 依赖 A (B -> A)，即 B 是调用方 (Consumer)，A 是被调用方 (Provider)。
         
         # Context
         这是一个基于 Spring Cloud 的微服务项目 (Monorepo)。
         项目包含的真实服务模块列表: [{project_structure}]
-        被修改的文件: {filename}
+        被修改的文件 (Provider): {filename}
+        所属服务: {current_service}
         
         # Cross-Service Impact (关键!)
-        脚本检测到该变更可能影响以下下游服务（调用方）:
+        脚本检测到该变更可能影响以下下游服务（调用方/Consumer）:
         {downstream_info}
         
         # Git Diff
@@ -296,37 +374,41 @@ class Command(BaseCommand):
         如果存在跨服务调用，请重点分析接口契约变更带来的风险。
         
         IMPORTANT:
-        1. 在分析“下游依赖”或“影响功能”时，请务必基于上述提供的【项目包含的真实服务模块列表】。
-        2. 禁止编造不存在的服务名称。
-        3. 如果某个潜在影响的服务不在列表中，请明确说明“未检测到相关服务”。
-        4. 返回的 JSON 必须严格符合标准格式。
+        1. 在分析“跨服务影响” (Cross-Service Impact) 时，**必须严格基于** 上面提供的 `Cross-Service Impact` 列表。
+        2. **严禁**将代码中引用的类（如 `PointClient`，这是上游依赖/被调用方）误认为是下游调用方。
+           - 如果代码里用了 `PointClient`，那是本服务在调用别人，属于依赖，而不是别人受我影响（除非我改了接口定义）。
+           - 只有在 `Cross-Service Impact` 列表中明确列出的服务，才是真正的受影响方。
+        3. 在分析“下游依赖”或“影响功能”时，请务必基于上述提供的【项目包含的真实服务模块列表】。
+        4. 禁止编造不存在的服务名称。
+        5. 如果上面的 Cross-Service Impact 中没有跨服务调用（只有内部调用或无），`cross_service_impact` 字段请填 "无" 或 null。
+        6. 不要直接复制下面的 JSON 模板值，请根据实际分析内容填写。
         
         請严格按照以下 JSON 格式返回：
         {{
-            "code_review_warning": "代码审查警示",
-            "change_intent": "变更意图",
+            "code_review_warning": "<代码审查警示>",
+            "change_intent": "<变更详情：请分点总结变更内容。如果是新增类，请将该类的方法作为子项列出，体现层级关系。例如：1. 新增了XX类，包含以下方法：(1) methodA: ... (2) methodB: ...>",
             "risk_level": "CRITICAL/HIGH/MEDIUM/LOW",
-            "cross_service_impact": "跨服务影响分析",
-            "functional_impact": "详细的功能影响分析。请务必包含：1. 直接受影响的功能点；2. 潜在受影响的关联业务；3. 建议的回归测试范围。",
+            "cross_service_impact": "<跨服务影响分析>",
+            "functional_impact": "<详细的功能影响分析>",
             "downstream_dependency": [
                 {{
-                    "service_name": "服务名",
-                    "file_path": "文件路径",
-                    "line_number": "行号",
-                    "caller_class": "调用方类名 (e.g., OrderService)",
-                    "caller_method": "调用方方法签名 (e.g., createOrder)",
-                    "target_method": "被调用的目标方法/API (e.g., /point/update)",
-                    "call_snippet": "调用处的代码片段 (关键行)",
-                    "impact_description": "该调用点可能受到的具体影响"
+                    "service_name": "<服务名>",
+                    "file_path": "<文件路径>",
+                    "line_number": "<行号>",
+                    "caller_class": "<调用方类名>",
+                    "caller_method": "<调用方方法签名>",
+                    "target_method": "<被调用的目标方法/API>",
+                    "call_snippet": "<调用处的代码片段>",
+                    "impact_description": "<该调用点可能受到的具体影响>"
                 }}
             ],
             "test_strategy": [
                 {{
-                    "title": "测试场景",
+                    "title": "<测试场景>",
                     "priority": "P0/P1",
-                    "steps": "步骤",
-                    "payload": "Payload",
-                    "validation": "验证点"
+                    "steps": "<步骤>",
+                    "payload": "<Payload示例 (必须是JSON格式)>",
+                    "validation": "<验证点>"
                 }}
             ]
         }}
@@ -371,14 +453,19 @@ class Command(BaseCommand):
             "temperature": 0.1
         }
         try:
-            req = urllib.request.Request(DEEPSEEK_API_URL, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
-            with urllib.request.urlopen(req) as response:
-                result = json.loads(response.read().decode('utf-8'))
+            # Switch to requests library for better SSL/Error handling
+            response = requests.post(DEEPSEEK_API_URL, json=data, headers=headers, timeout=60)
+            
+            if response.status_code == 200:
+                result = response.json()
                 if 'choices' in result and len(result['choices']) > 0:
                     return result['choices'][0]['message']['content'], result.get('usage', {})
-                return None, None
+            else:
+                console.print(f"[red]API Error Status: {response.status_code} - {response.text}[/red]")
+            
+            return None, None
         except Exception as e:
-            console.print(f"[red]API Error: {e}[/red]")
+            console.print(f"[red]API Connection Error: {e}[/red]")
             return None, None
 
     def print_code_comparison(self, diff_text):
@@ -436,22 +523,44 @@ class Command(BaseCommand):
                             if not found and method_name and method_name in content:
                                 if re.search(r'\b' + re.escape(method_name) + r'\b', content): found = True
                             
-                            if found:
-                                rel_path = os.path.relpath(full_path, root_dir)
-                                service_name = rel_path.split(os.sep)[0]
-                                line_num = 0
-                                context_snippet = ""
-                                for idx, line_content in enumerate(content.splitlines()):
-                                    if (api_path and api_path in line_content) or (method_name and method_name in line_content and re.search(r'\b' + re.escape(method_name) + r'\b', line_content)):
-                                        line_num = idx + 1
-                                        context_snippet = line_content.strip()[:100]
-                                        break
+                            best_snippet = None
+                            best_line = 0
+                            
+                            for idx, line_content in enumerate(content.splitlines()):
+                                if (api_path and api_path in line_content) or (method_name and method_name in line_content and re.search(r'\b' + re.escape(method_name) + r'\b', line_content)):
+                                    
+                                    # Skip imports
+                                    if line_content.strip().startswith("import "): continue
+                                    
+                                    # Candidate
+                                    current_snippet = line_content.strip()
+                                    current_line = idx + 1
+                                    
+                                    # Heuristic: Prefer method calls (has '(') over declarations (has 'private/public' but no '(' or just ';')
+                                    # If we haven't found anything yet, take it.
+                                    if best_snippet is None:
+                                        best_snippet = current_snippet
+                                        best_line = current_line
+                                    
+                                    # If current is a method call, it's better than a declaration
+                                    is_call = '(' in current_snippet and not current_snippet.startswith(('private ', 'public ', 'protected '))
+                                    is_decl = current_snippet.startswith(('private ', 'public ', 'protected ')) or ('(' not in current_snippet)
+                                    
+                                    if is_call:
+                                        best_snippet = current_snippet
+                                        best_line = current_line
+                                        # If we found a call, we can stop or keep looking for more calls? 
+                                        # Let's keep looking in case there are multiple, but usually one is enough to show usage.
+                                        # Actually, for this specific request, the user wants the CALL.
+                                        found = True
+                                        
+                            if best_snippet:
                                 usages.append({
                                     "service": service_name,
                                     "file": os.path.basename(file),
                                     "path": rel_path,
-                                    "line": line_num,
-                                    "snippet": context_snippet,
+                                    "line": best_line,
+                                    "snippet": best_snippet[:100],
                                     "target_api": api_path or method_name
                                 })
                     except: pass

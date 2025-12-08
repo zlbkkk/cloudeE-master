@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 // Re-build trigger
 import axios from 'axios';
 import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio } from 'antd';
-import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined } from '@ant-design/icons';
+import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -25,7 +25,28 @@ const FlowchartModal = ({ visible, onClose, data, sourceFile }) => {
       <div className="pt-12 pb-6 px-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col items-center justify-center gap-5 relative overflow-visible">
          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 opacity-20 rounded-t-lg"></div>
          
-         {/* Caller Node (Downstream/Consumer) */}
+         {/* Callee Node (Current/Provider) - Moved to Top */}
+         <div className="flex flex-col items-center z-10">
+            <div className="w-72 bg-white border border-blue-200 rounded-lg shadow-sm p-4 text-center relative">
+                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-200 tracking-wider shadow-sm">被调用方 (Provider)</div>
+                 <div className="text-sm font-bold text-slate-800 mt-2">{data.target_service || 'Current Service'}</div>
+                 <div className="text-xs text-slate-600 mt-1.5 font-mono bg-slate-50 rounded py-1 px-2 border border-slate-100">
+                    {sourceFile}
+                 </div>
+            </div>
+         </div>
+
+         {/* Edge */}
+         <div className="flex flex-col items-center gap-0 z-10">
+             <div className="h-8 w-px bg-slate-300"></div>
+             <div className="bg-white px-3 py-1 rounded-full border border-blue-200 text-xs text-slate-600 flex flex-col items-center shadow-sm z-20 my-1">
+                 <span className="text-[10px] text-blue-500 font-bold mb-0.5">INVOKES</span>
+                 <span className="font-mono font-medium max-w-[200px] truncate text-slate-800 text-[10px]" title={data.target_method}>{data.target_method || 'API / Interface'}</span>
+             </div>
+             <ArrowDownOutlined className="text-slate-300 text-lg" />
+         </div>
+
+         {/* Caller Node (Downstream/Consumer) - Moved to Bottom */}
          <div className="flex flex-col items-center z-10">
             <div className="w-72 bg-white border border-green-200 rounded-lg shadow-sm p-4 text-center relative">
                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-green-100 text-green-700 px-3 py-1 rounded-full text-[10px] font-bold border border-green-200 tracking-wider shadow-sm">调用方 (Consumer)</div>
@@ -39,33 +60,11 @@ const FlowchartModal = ({ visible, onClose, data, sourceFile }) => {
             </div>
          </div>
 
-         {/* Edge */}
-         <div className="flex flex-col items-center gap-0.5 z-10">
-             <div className="h-4 w-px bg-slate-300"></div>
-             <div className="bg-white px-3 py-1 rounded-full border border-blue-200 text-xs text-slate-600 flex flex-col items-center shadow-sm z-20">
-                 <span className="text-[10px] text-blue-500 font-bold mb-0.5">INVOKES</span>
-                 <span className="font-mono font-medium max-w-[200px] truncate text-slate-800 text-[10px]" title={data.target_method}>{data.target_method || 'API / Interface'}</span>
-             </div>
-             <div className="h-4 w-px bg-slate-300"></div>
-             <ArrowDownOutlined className="text-slate-300 text-lg" />
-         </div>
-
-         {/* Callee Node (Current/Provider) */}
-         <div className="flex flex-col items-center z-10">
-            <div className="w-72 bg-white border border-blue-200 rounded-lg shadow-sm p-4 text-center relative">
-                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-200 tracking-wider shadow-sm">被调用方 (Provider)</div>
-                 <div className="text-sm font-bold text-slate-800 mt-2">Current Service</div>
-                 <div className="text-xs text-slate-600 mt-1.5 font-mono bg-slate-50 rounded py-1 px-2 border border-slate-100">
-                    {sourceFile}
-                 </div>
-            </div>
-         </div>
-
          {/* Call Snippet */}
          {data.call_snippet && (
              <div className="w-full max-w-lg bg-slate-800 rounded-lg p-3 border border-slate-700 shadow-md font-mono text-[10px] text-slate-300 overflow-x-auto z-10">
                  <div className="text-slate-500 mb-1 uppercase tracking-wider text-[9px] font-bold flex items-center gap-1">
-                     <CodeOutlined /> Call Site Preview
+                     <CodeOutlined /> 调用点代码预览
                  </div>
                  <pre className="whitespace-pre-wrap break-all">{data.call_snippet}</pre>
              </div>
@@ -124,15 +123,31 @@ const parseDiff = (text) => {
   };
 
   lines.forEach(line => {
-    if (line.startsWith('diff') || line.startsWith('index') || line.startsWith('---') || line.startsWith('+++') || line.startsWith('\\')) return;
+    // Ignore git metadata header lines
+    if (line.startsWith('diff ') || 
+        line.startsWith('index ') || 
+        line.startsWith('new file mode') || 
+        line.startsWith('deleted file mode') ||
+        line.startsWith('similarity index') ||
+        line.startsWith('rename from') ||
+        line.startsWith('rename to') ||
+        line.startsWith('--- ') || 
+        line.startsWith('+++ ') || 
+        line.startsWith('\\')) {
+        return;
+    }
 
     if (line.startsWith('@@')) {
       flushBuffer();
       rows.push({ type: 'header', content: line });
       const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
       if (match) {
-        leftLine = parseInt(match[1], 10) - 1;
-        rightLine = parseInt(match[3], 10) - 1;
+        // If left line is 0 (new file), keep it 0. Otherwise adjust index.
+        const lLine = parseInt(match[1], 10);
+        leftLine = lLine === 0 ? 0 : lLine - 1;
+        
+        const rLine = parseInt(match[3], 10);
+        rightLine = rLine === 0 ? 0 : rLine - 1;
       }
       return;
     }
@@ -145,8 +160,9 @@ const parseDiff = (text) => {
       bufferAdd.push({ line: rightLine, content: line.substring(1) });
     } else {
       flushBuffer();
-      leftLine++;
-      rightLine++;
+      // Only increment if line number is > 0 (handle empty file cases)
+      if (leftLine >= 0) leftLine++;
+      if (rightLine >= 0) rightLine++;
       rows.push({
         leftNum: leftLine,
         leftCode: line.substring(1),
@@ -536,7 +552,7 @@ function App() {
               
               if (activeTasks.length > 0) {
                   // Continue polling if active tasks exist
-                  setTimeout(poll, 2000);
+                  setTimeout(poll, 3000);
               } else {
                   // Stop polling
                   isPollingRef.current = false;
@@ -569,19 +585,56 @@ function App() {
       refreshData(); // This triggers fetchReports and restarts task polling
   };
 
-  // Group reports by project and then by timestamp (batch)
+  // Group reports by project and then by task (preferred) or fuzzy timestamp
   const projectGroups = React.useMemo(() => {
       const groups = {};
-      reports.forEach(r => {
+      
+      // 1. Sort reports by creation time descending
+      const sortedReports = [...reports].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      sortedReports.forEach(r => {
           const pName = r.project_name || 'Unknown Project';
           if (!groups[pName]) groups[pName] = {};
           
-          // Group by timestamp (minute precision)
-          const date = new Date(r.created_at);
-          const timeKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-          
-          if (!groups[pName][timeKey]) groups[pName][timeKey] = [];
-          groups[pName][timeKey].push(r);
+          let batchKey = null;
+
+          // Priority 1: Group by Task ID if available
+          if (r.task) {
+              const rDate = new Date(r.created_at);
+              // Use Task ID combined with date for display text, but grouping relies on ID
+              // To make it look nice in UI: "YYYY-MM-DD HH:mm (Task #ID)"
+              const timeStr = `${rDate.getFullYear()}-${String(rDate.getMonth()+1).padStart(2, '0')}-${String(rDate.getDate()).padStart(2, '0')} ${String(rDate.getHours()).padStart(2, '0')}:${String(rDate.getMinutes()).padStart(2, '0')}`;
+              batchKey = `${timeStr} (Task #${r.task})`;
+          } else {
+              // Priority 2: Legacy Fuzzy Timestamp grouping
+              const rDate = new Date(r.created_at);
+              const existingKeys = Object.keys(groups[pName]);
+              
+              for (const key of existingKeys) {
+                  // Skip task-based keys for fuzzy matching to avoid mixing
+                  if (key.includes('(Task #')) continue;
+
+                  const batchReports = groups[pName][key];
+                  if (batchReports.length > 0) {
+                      const firstDate = new Date(batchReports[0].created_at);
+                      const diffMinutes = Math.abs((firstDate - rDate) / (1000 * 60));
+                      if (diffMinutes <= 5) { 
+                          batchKey = key;
+                          break;
+                      }
+                  }
+              }
+              
+              if (!batchKey) {
+                   const timeKey = `${rDate.getFullYear()}-${String(rDate.getMonth()+1).padStart(2, '0')}-${String(rDate.getDate()).padStart(2, '0')} ${String(rDate.getHours()).padStart(2, '0')}:${String(rDate.getMinutes()).padStart(2, '0')}`;
+                   batchKey = timeKey;
+              }
+          }
+
+          if (!groups[pName][batchKey]) {
+              groups[pName][batchKey] = [];
+          }
+          groups[pName][batchKey].push(r);
       });
       return groups;
   }, [reports]);
@@ -980,11 +1033,11 @@ const ReportDetail = ({ report }) => {
               <div className="space-y-3">
                   {/* Change Intent */}
                   <div>
-                      <span className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                          <FileTextOutlined className="text-blue-500"/> 变更意图
-                      </span>
-                      <div className="text-xs text-gray-700 font-medium leading-relaxed bg-gray-50/50 p-3 rounded-lg border border-gray-100/80 shadow-sm">
-                          {renderField(report.change_intent)}
+                      <div className="flex items-center gap-2 mb-3 text-sm font-bold text-slate-700">
+                          <FileTextOutlined className="text-blue-500"/> 变更详情
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700 leading-relaxed">
+                          {renderField(report.change_intent || '暂无分析结果')}
                       </div>
                   </div>
 
@@ -1053,14 +1106,19 @@ const ReportDetail = ({ report }) => {
                  rowKey={(r) => (r.file_path||'')+(r.line_number||'')} 
                  pagination={false} 
                  columns={[
-                    { title: '服务名', dataIndex: 'service_name', render: t => <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-xs font-bold">{t}</span> },
-                    { title: '文件路径', dataIndex: 'file_path', render: t => <span className="font-mono text-xs text-slate-600">{t}</span> },
-                    { title: '行号', dataIndex: 'line_number', width: 80, render: t => <span className="font-mono text-xs text-slate-400">L{t}</span> },
-                    { title: '影响描述', dataIndex: 'impact_description', render: t => <span className="text-sm text-slate-700">{t}</span> },
+                    { title: '服务名', dataIndex: 'service_name', width: 140, render: t => <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-xs font-bold whitespace-nowrap">{t}</span> },
+                    { title: '文件路径', dataIndex: 'file_path', width: 300, render: t => (
+                        <div className="font-mono text-xs text-slate-600 truncate max-w-[280px]" title={t}>
+                            {t}
+                        </div>
+                    )},
+                    { title: '行号', dataIndex: 'line_number', width: 80, align: 'center', render: t => <span className="font-mono text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">L{t}</span> },
+                    { title: '影响描述', dataIndex: 'impact_description', render: t => <span className="text-xs text-slate-700 leading-relaxed block min-w-[200px]">{t}</span> },
                     { 
                         title: '依赖流程图', 
                         key: 'action',
                         width: 120,
+                        align: 'center',
                         render: (_, record) => (
                             <Button 
                                 type="link" 
@@ -1076,7 +1134,8 @@ const ReportDetail = ({ report }) => {
                         )
                     }
                  ]}
-                 size="small"
+                 size="middle"
+                 scroll={{ x: 'max-content' }}
               />
               {(!data.downstream_dependency || data.downstream_dependency.length === 0) && <div className="p-8 text-center text-slate-400">未检测到下游依赖</div>}
           </div>

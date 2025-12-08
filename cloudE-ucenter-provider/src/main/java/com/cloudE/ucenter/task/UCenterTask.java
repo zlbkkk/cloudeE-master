@@ -8,6 +8,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import com.cloudE.ucenter.manager.PointManager;
+import javax.annotation.Resource;
+import java.util.Collections;
 
 /**
  * Created by carl_gao on 2017/5/17.
@@ -19,6 +22,9 @@ public class UCenterTask {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UCenterTask.class);
 
+    @Resource
+    private PointManager pointManager;
+
     private Integer dynamicParameter;
 
     @Scheduled(cron = "0/5 * *  * * * ")
@@ -28,6 +34,8 @@ public class UCenterTask {
             //TODO 业务1
         } else if (dynamicParameter == 2) {
             //TODO 业务2
+            // Task trigger point distribution
+            pointManager.distributePointsBatch(Collections.singletonList(1001L), 10, "TASK_TRIGGER");
         }
     }
 
