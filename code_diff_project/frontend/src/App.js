@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 // Re-build trigger
 import axios from 'axios';
 import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio } from 'antd';
-import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons';
+import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined, ArrowUpOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -464,7 +464,28 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
 };
 
 // New Component: Task List View
+const LogModal = ({ visible, onClose, logContent }) => {
+    return (
+        <Modal
+            title={<span className="flex items-center gap-2"><FileTextOutlined /> 任务执行日志</span>}
+            open={visible}
+            onCancel={onClose}
+            width={800}
+            footer={[
+                <Button key="close" onClick={onClose}>关闭</Button>
+            ]}
+        >
+            <div className="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-xs h-[500px] overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                {logContent || '暂无日志信息'}
+            </div>
+        </Modal>
+    );
+};
+
 const TaskListView = ({ tasks }) => {
+    const [logModalVisible, setLogModalVisible] = useState(false);
+    const [currentLog, setCurrentLog] = useState('');
+
     const getStatusColor = (status) => {
         switch(status) {
             case 'COMPLETED': return 'text-green-600 bg-green-50 border-green-100';
@@ -472,6 +493,11 @@ const TaskListView = ({ tasks }) => {
             case 'PROCESSING': return 'text-blue-600 bg-blue-50 border-blue-100';
             default: return 'text-orange-600 bg-orange-50 border-orange-100'; // PENDING
         }
+    };
+
+    const showLog = (log) => {
+        setCurrentLog(log);
+        setLogModalVisible(true);
     };
 
     return (
@@ -504,13 +530,21 @@ const TaskListView = ({ tasks }) => {
                             return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${colorClass}`}>{t}</span>;
                         }},
                         { title: '最新日志', dataIndex: 'log_details', render: t => (
-                            <div className="text-xs text-slate-400 font-mono truncate max-w-md" title={t}>
-                                {t ? t.trim().split('\n').pop() : '-'}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs text-slate-400 font-mono truncate flex-1" title={t}>
+                                    {t ? t.trim().split('\n').pop() : '-'}
+                                </div>
+                                <Button type="link" size="small" onClick={() => showLog(t)}>查看详情</Button>
                             </div>
                         )}
                     ]}
                 />
             </div>
+            <LogModal 
+                visible={logModalVisible} 
+                onClose={() => setLogModalVisible(false)} 
+                logContent={currentLog} 
+            />
         </div>
     );
 };
@@ -844,7 +878,7 @@ function App() {
       }
       
       // Reports view
-      if (currentReport) return <ReportDetail report={currentReport} />;
+      if (currentReport) return <ReportDetail report={currentReport} onBack={() => setSelectedReportId(null)} />;
       if (selectedProject) return <ProjectOverview projectName={selectedProject} reports={currentProjectReports} onSelectReport={setSelectedReportId} />;
       
       return (
@@ -921,51 +955,109 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                 <p className="text-slate-500 mt-2">该项目共检测到 {reports.length} 个文件变更记录。</p>
             </div>
             
-            <div className="space-y-8">
-                {groupedReports.map(([timeKey, groupReports]) => (
-                    <div key={timeKey} className="bg-slate-50/50 rounded-xl p-4 border border-slate-100">
-                        <div className="flex items-center gap-2 mb-4">
-                            <ClockCircleOutlined className="text-blue-500" />
-                            <span className="font-bold text-slate-700 text-sm">分析批次: {timeKey}</span>
-                            <span className="text-xs text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-100">
-                                {groupReports.length} 个文件
+            <div className="space-y-10 pb-10">
+                {groupedReports.map(([timeKey, groupReports], idx) => (
+                    <div key={timeKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                        <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold">
+                                    {idx + 1}
+                                </div>
+                                <div>
+                                    <span className="font-bold text-slate-700 block text-sm">
+                                        分析批次: {timeKey}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">Created at {timeKey}</span>
+                                </div>
+                            </div>
+                            <span className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                                {groupReports.length} 个变更文件
                             </span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {groupReports.map(report => {
-                                const renderRiskBadge = (level) => {
-                                    const colors = { 'CRITICAL': 'text-red-600 bg-red-50 border-red-100', 'HIGH': 'text-orange-600 bg-orange-50 border-orange-100', 'MEDIUM': 'text-yellow-600 bg-yellow-50 border-yellow-100', 'LOW': 'text-green-600 bg-green-50 border-green-100' };
-                                    return <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${colors[level]}`}>{level}</span>;
-                                };
-                                return (
-                                    <div key={report.id} onClick={() => onSelectReport(report.id)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="p-2 rounded-lg bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
-                                                <FileTextOutlined className="text-xl" />
-                                            </div>
-                                            {renderRiskBadge(report.risk_level)}
+                        
+                        <div className="p-0">
+                        <Table 
+                            dataSource={groupReports} 
+                            rowKey="id"
+                            pagination={false}
+                            size="middle"
+                            className="no-border-table"
+                            columns={[
+                                {
+                                    title: 'ID',
+                                    dataIndex: 'id',
+                                    width: 80,
+                                    render: (text) => <span className="font-mono text-slate-400">#{text}</span>
+                                },
+                                {
+                                    title: '风险等级',
+                                    dataIndex: 'risk_level',
+                                    width: 100,
+                                    render: (level) => {
+                                        const colors = { 'CRITICAL': 'red', 'HIGH': 'orange', 'MEDIUM': 'gold', 'LOW': 'green' };
+                                        const labels = { 'CRITICAL': '严重', 'HIGH': '高危', 'MEDIUM': '中等', 'LOW': '低风险' };
+                                        return (
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border border-${colors[level]}-200 bg-${colors[level]}-50 text-${colors[level]}-600`}>
+                                                {level}
+                                            </span>
+                                        );
+                                    }
+                                },
+                                {
+                                    title: '变更文件',
+                                    dataIndex: 'file_name',
+                                    width: 250,
+                                    render: (text, record) => (
+                                        <a onClick={() => onSelectReport(record.id)} className="font-medium text-blue-600 hover:underline flex items-center gap-2">
+                                            <FileTextOutlined /> {text}
+                                        </a>
+                                    )
+                                },
+                                {
+                                    title: '变更意图',
+                                    dataIndex: 'change_intent',
+                                    render: (text) => (
+                                        <div className="text-xs text-slate-600 line-clamp-2 max-w-xl" title={text}>
+                                            {text || <span className="text-slate-300 italic">暂无描述</span>}
                                         </div>
-                                        <h3 className="font-bold text-slate-700 truncate mb-1 text-sm" title={report.file_name}>{report.file_name}</h3>
-                                        <div className="text-[10px] text-slate-400 flex items-center justify-between mt-2">
-                                            <span className="flex items-center gap-1"><ClockCircleOutlined /> {new Date(report.created_at).toLocaleTimeString()}</span>
-                                            <span className="font-mono">ID:{report.id}</span>
+                                    )
+                                },
+                                {
+                                    title: '生成时间',
+                                    dataIndex: 'created_at',
+                                    width: 150,
+                                    render: (text) => (
+                                        <div className="text-xs text-slate-400 flex items-center gap-1">
+                                            <ClockCircleOutlined /> {new Date(text).toLocaleTimeString()}
                                         </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                    )
+                                },
+                                {
+                                    title: '操作',
+                                    key: 'action',
+                                    width: 100,
+                                    render: (_, record) => (
+                                        <Button type="link" size="small" onClick={() => onSelectReport(record.id)}>查看详情</Button>
+                                    )
+                                }
+                            ]}
+                        />
                     </div>
+                </div>
                 ))}
             </div>
         </div>
     );
 };
 
-const ReportDetail = ({ report }) => {
+const ReportDetail = ({ report, onBack }) => {
   const data = report.report_json;
   const [diffModalVisible, setDiffModalVisible] = useState(false);
   const [flowchartVisible, setFlowchartVisible] = useState(false);
   const [currentFlowData, setCurrentFlowData] = useState(null);
+
+  // Helper functions
+
 
   const renderField = (value) => {
     if (!value) return <span className="text-slate-400">N/A</span>;
@@ -1068,40 +1160,54 @@ const ReportDetail = ({ report }) => {
   return (
     <div className="space-y-3 max-w-6xl mx-auto pb-6 font-sans">
       
-      {/* Title Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex justify-between items-start transition-all hover:shadow-md">
-         <div className="flex gap-4">
-             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center text-blue-600 text-lg flex-shrink-0 border border-blue-100 shadow-sm">
-                 <FileTextOutlined />
-             </div>
-             <div>
-                 {/* Project & Branch Context */}
-                 <div className="flex items-center gap-2 text-[10px] text-gray-400 mb-1 font-medium tracking-wide">
-                    <span className="flex items-center gap-1 bg-gray-50 px-1.5 py-0.5 rounded text-gray-500 border border-gray-100">
-                        <FolderOpenOutlined /> {report.project_name || 'Unknown Project'}
-                    </span>
-                    <span className="text-gray-300">/</span>
-                    <span className="flex items-center gap-1 bg-blue-50/50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100/50">
-                        <BranchesOutlined /> {report.source_branch || 'master'} <ArrowRightOutlined className="text-[10px]" /> {report.target_branch || 'feature/dev'}
-                    </span>
-                 </div>
-                 
-                 <div className="flex items-center gap-3 mb-0.5">
-                     <h1 className="text-lg font-bold text-gray-800 tracking-tight">{report.file_name}</h1>
-                     {renderRiskBadge(report.risk_level)}
-                 </div>
-                 <div className="flex items-center gap-4 text-[10px] text-gray-400 font-medium">
-                     <span className="flex items-center gap-1.5"><ClockCircleOutlined /> {new Date(report.created_at).toLocaleString()}</span>
-                     <span className="flex items-center gap-1.5"><CodeOutlined /> ID: {report.id}</span>
-                 </div>
-             </div>
+      {/* Header with Back Button */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 transition-all hover:shadow-md">
+         {/* Back Button Row */}
+         <div className="mb-4">
+            <Button 
+                type="text" 
+                icon={<ArrowLeftOutlined />} 
+                onClick={onBack}
+                className="text-slate-500 hover:text-blue-600 hover:bg-slate-50 px-2 pl-0"
+            >
+                返回列表
+            </Button>
          </div>
-         <button 
-             onClick={() => setDiffModalVisible(true)}
-             className="text-gray-500 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-xs font-semibold border border-transparent hover:border-gray-200"
-         >
-             <ExpandOutlined /> 查看 Diff
-         </button>
+
+         <div className="flex justify-between items-start">
+             <div className="flex gap-4">
+                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center text-blue-600 text-lg flex-shrink-0 border border-blue-100 shadow-sm">
+                     <FileTextOutlined />
+                 </div>
+                 <div>
+                     {/* Project & Branch Context */}
+                     <div className="flex items-center gap-2 text-[10px] text-gray-400 mb-1 font-medium tracking-wide">
+                        <span className="flex items-center gap-1 bg-gray-50 px-1.5 py-0.5 rounded text-gray-500 border border-gray-100">
+                            <FolderOpenOutlined /> {report.project_name || 'Unknown Project'}
+                        </span>
+                        <span className="text-gray-300">/</span>
+                        <span className="flex items-center gap-1 bg-blue-50/50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100/50">
+                            <BranchesOutlined /> {report.source_branch || 'master'} <ArrowRightOutlined className="text-[10px]" /> {report.target_branch || 'feature/dev'}
+                        </span>
+                     </div>
+                     
+                     <div className="flex items-center gap-3 mb-0.5">
+                         <h1 className="text-lg font-bold text-gray-800 tracking-tight">{report.file_name}</h1>
+                         {renderRiskBadge(report.risk_level)}
+                     </div>
+                     <div className="flex items-center gap-4 text-[10px] text-gray-400 font-medium">
+                         <span className="flex items-center gap-1.5"><ClockCircleOutlined /> {new Date(report.created_at).toLocaleString()}</span>
+                         <span className="flex items-center gap-1.5"><CodeOutlined /> ID: {report.id}</span>
+                     </div>
+                 </div>
+             </div>
+             <button 
+                 onClick={() => setDiffModalVisible(true)}
+                 className="text-gray-500 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-xs font-semibold border border-transparent hover:border-gray-200"
+             >
+                 <ExpandOutlined /> 查看 Diff
+             </button>
+         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3">
@@ -1148,6 +1254,37 @@ const ReportDetail = ({ report }) => {
               </div>
           </div>
       </div>
+
+      {/* Affected APIs Section */}
+      {data.affected_apis && data.affected_apis.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-5">
+              <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4">
+                  <ApiOutlined className="text-purple-500" /> 影响接口 (Affected APIs)
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {data.affected_apis.map((api, idx) => (
+                      <div key={idx} className="bg-purple-50/30 border border-purple-100 rounded-lg p-3 flex flex-col gap-2 hover:bg-purple-50 transition-colors">
+                          <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                  api.method === 'GET' ? 'bg-blue-100 text-blue-700' :
+                                  api.method === 'POST' ? 'bg-green-100 text-green-700' :
+                                  api.method === 'DELETE' ? 'bg-red-100 text-red-700' :
+                                  'bg-orange-100 text-orange-700'
+                              }`}>
+                                  {api.method}
+                              </span>
+                          </div>
+                          <code className="text-xs font-mono text-slate-700 break-all bg-white px-2 py-1 rounded border border-slate-200">
+                              {api.url}
+                          </code>
+                          <div className="text-xs text-slate-500 mt-1 leading-relaxed">
+                              {api.description}
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
 
       {/* Diff Preview */}
       {report.diff_content && (

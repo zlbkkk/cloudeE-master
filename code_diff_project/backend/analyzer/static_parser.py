@@ -27,9 +27,25 @@ class LightStaticAnalyzer:
                 package_name = tree.package.name
             
             class_name = ''
+            base_path = ''
+
             # Try finding ClassDeclaration
             for path, node in tree.filter(javalang.tree.ClassDeclaration):
                 class_name = node.name
+                # Extract Class-level @RequestMapping
+                if node.annotations:
+                    for ann in node.annotations:
+                        if ann.name == 'RequestMapping' or ann.name.endswith('.RequestMapping'):
+                            if ann.element:
+                                if isinstance(ann.element, list) and len(ann.element) > 0:
+                                     # @RequestMapping(value="/path")
+                                     for elem in ann.element:
+                                         if elem.name == 'value' or elem.name == 'path':
+                                             if hasattr(elem.value, 'value'):
+                                                 base_path = elem.value.value.strip('"')
+                                elif hasattr(ann.element, 'value'):
+                                     # @RequestMapping("/path")
+                                     base_path = ann.element.value.strip('"')
                 break 
             
             # If not found, try InterfaceDeclaration
@@ -40,8 +56,8 @@ class LightStaticAnalyzer:
 
             if package_name and class_name:
                 full_name = f"{package_name}.{class_name}"
-                logger.info(f"Parsed Class: {full_name}")
-                return full_name, class_name
+                logger.info(f"Parsed Class: {full_name}, Base Path: {base_path}")
+                return full_name, class_name, base_path
             else:
                 logger.warning(f"Failed to extract Package/Class from: {file_path}")
                 
@@ -50,7 +66,7 @@ class LightStaticAnalyzer:
             # 解析失败不阻断流程
             pass
             
-        return None, None
+        return None, None, None
 
     def find_usages(self, target_full_class_name):
         """
@@ -188,20 +204,26 @@ class LightStaticAnalyzer:
         返回 (context_text, usages_list)
         """
         try:
-            full_class, simple_class = self.parse_java_file(file_path)
+            full_class, simple_class, base_path = self.parse_java_file(file_path)
             if not full_class:
                 return "", []
             
+            context_text = ""
+            if base_path:
+                context_text += f"[Static Analysis] Class Base Request Path: /{base_path.lstrip('/')}\n"
+            
             usages = self.find_usages(full_class)
             if not usages:
-                return f"[Static Analysis] Class {simple_class} ({full_class}) has no explicit imports found in other files.\n", []
+                context_text += f"[Static Analysis] Class {simple_class} ({full_class}) has no explicit imports found in other files.\n"
+                return context_text, []
             
             usage_str_list = [f"{u['path']} (Service: {u['service']})" for u in usages[:10]]
             usage_str = ", ".join(usage_str_list)
             if len(usages) > 10:
                 usage_str += "..."
                 
-            return f"[Static Analysis] Class {simple_class} ({full_class}) is used by: {usage_str}.\n", usages
+            context_text += f"[Static Analysis] Class {simple_class} ({full_class}) is used by: {usage_str}.\n"
+            return context_text, usages
         except Exception as e:
             logger.error(f"Context generation failed: {e}")
             return "", []

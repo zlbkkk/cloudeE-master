@@ -148,6 +148,55 @@ class Command(BaseCommand):
                         
                         console.print(table)
                     
+                    # --- Generate Log for Task Details ---
+                    log_msg = f"\n╭──────────────── 【精准测试作战手册】 ────────────────╮\n"
+                    log_msg += f"│ 文件: {filename}\n"
+                    log_msg += f"╰──────────────────────────────────────────────────────╯\n"
+                    
+                    if warning:
+                        log_msg += f"\n[CODE REVIEW 警示]\n{warning}\n"
+                    
+                    log_msg += "\n[Change Analysis] 变更分析\n"
+                    log_msg += f"• 意图推测:\n  {self.format_field(report.get('change_intent', 'N/A')).replace(chr(10), chr(10)+'  ')}\n"
+                    log_msg += f"• 风险等级: {self.format_field(report.get('risk_level', 'N/A'))}\n"
+                    log_msg += f"• 跨服务影响:\n  {self.format_field(report.get('cross_service_impact', 'N/A')).replace(chr(10), chr(10)+'  ')}\n"
+                    log_msg += f"• 影响功能:\n  {self.format_field(report.get('functional_impact', 'N/A')).replace(chr(10), chr(10)+'  ')}\n"
+                    
+                    deps = report.get('downstream_dependency', [])
+                    if deps:
+                         log_msg += f"\n[Downstream Dependencies] 下游依赖\n"
+                         if isinstance(deps, list):
+                             for d in deps:
+                                 if isinstance(d, dict):
+                                     log_msg += f"  - 服务: {d.get('service_name', 'N/A')}\n"
+                                     log_msg += f"    文件: {d.get('file_path', 'N/A')}\n"
+                                     log_msg += f"    说明: {d.get('impact_description', 'N/A')}\n"
+                                     log_msg += f"    --------------------------------------------------\n"
+                                 else:
+                                     log_msg += f"  - {d}\n"
+                         else:
+                             log_msg += f"  {deps}\n"
+
+                    if strategies:
+                        log_msg += "\n[Test Strategy] 测试策略矩阵\n"
+                        log_msg += f"╭{'─'*8}┬{'─'*30}┬{'─'*35}╮\n"
+                        log_msg += f"│{'优先级':<6}│{'场景标题':<28}│{'验证点':<33}│\n"
+                        log_msg += f"├{'─'*8}┼{'─'*30}┼{'─'*35}┤\n"
+                        
+                        for s in strategies:
+                            prio = str(s.get('priority', '-'))
+                            title = str(s.get('title', '-')).replace('\n', ' ')
+                            val = str(s.get('validation', '-')).replace('\n', ' ')
+                            
+                            # Clean and truncate
+                            if len(title) > 28: title = title[:25] + "..."
+                            if len(val) > 33: val = val[:30] + "..."
+                            
+                            log_msg += f"│{prio:<6}│{title:<28}│{val:<33}│\n"
+                        log_msg += f"╰{'─'*8}┴{'─'*30}┴{'─'*35}╯\n"
+
+                    self.update_task_log(task_id, log_msg)
+
                     # --- 保存至数据库 ---
                     project_name = os.path.basename(project_root)
                     self.save_to_db(filename, report, content, project_name=project_name, task_id=task_id)
@@ -268,7 +317,7 @@ class Command(BaseCommand):
             downstream_info = "\n".join(info_lines)
         
         console.print(Panel(f"[bold]发现潜在下游调用方:[/bold]\n{downstream_info}", title="Link Analysis", border_style="blue", expand=False))
-        self.update_task_log(task_id, f"[Link Analysis] 发现 {len(downstream_callers)} 个潜在下游调用点。")
+        self.update_task_log(task_id, f"[Link Analysis] 发现 {len(downstream_callers)} 个潜在下游调用点。\n{downstream_info}")
         
         # Static Analysis Integration
         static_context = ""
@@ -282,7 +331,7 @@ class Command(BaseCommand):
                 
                 if static_context:
                     console.print(Panel(static_context.strip(), title="Static Analysis", border_style="green"))
-                    self.update_task_log(task_id, "[Static Analysis] 静态分析上下文获取成功。")
+                    self.update_task_log(task_id, f"[Static Analysis] 静态分析上下文获取成功。\n{static_context.strip()}")
                 
                 # Merge static usages into downstream_callers
                 if static_usages:
@@ -343,7 +392,7 @@ class Command(BaseCommand):
             downstream_info = "\n".join(info_lines)
         
         console.print(Panel(f"[bold]发现潜在下游调用方 (Combined & Filtered):[/bold]\n{downstream_info}", title="Link Analysis", border_style="blue", expand=False))
-        self.update_task_log(task_id, f"[Link Analysis] 发现 {len(downstream_callers)} 个潜在跨服务调用点。")
+        self.update_task_log(task_id, f"[Link Analysis] 发现 {len(downstream_callers)} 个潜在跨服务调用点。\n{downstream_info}")
 
         console.print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...", style="bold magenta")
         self.update_task_log(task_id, f"[AI Analysis] 正在请求 AI 分析...")
@@ -390,6 +439,13 @@ class Command(BaseCommand):
             "risk_level": "CRITICAL/HIGH/MEDIUM/LOW",
             "cross_service_impact": "<跨服务影响分析>",
             "functional_impact": "<详细的功能影响分析>",
+            "affected_apis": [
+                {{
+                    "method": "GET/POST/PUT/DELETE",
+                    "url": "/api/v1/example",
+                    "description": "接口说明"
+                }}
+            ],
             "downstream_dependency": [
                 {{
                     "service_name": "<服务名>",
@@ -427,6 +483,7 @@ class Command(BaseCommand):
         if usage:
             total = usage.get('total_tokens', 0)
             console.print(f"[dim]DeepSeek Token Usage: Total {total}[/dim]")
+            self.update_task_log(task_id, f"DeepSeek Token Usage: Total {total}")
             
         try:
             cleaned_content = response_content.strip()

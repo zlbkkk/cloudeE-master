@@ -73,10 +73,20 @@ public class RechargeProvider {
      * 新增接口：查询用户交易历史
      */
     @RequestMapping(value = "/recharge/history", method = RequestMethod.GET)
-    public BaseResult<List<String>> getUserTransactionHistory(@RequestParam Long userId) {
-        LOGGER.info("Fetching transaction history for user {}", userId);
+    public BaseResult<List<String>> getUserTransactionHistory(
+            @RequestParam Long userId,
+            @RequestParam(required = false, defaultValue = "7") Integer days) {
+        LOGGER.info("Fetching transaction history for user {} for last {} days", userId, days);
         // Mock return for demo
         return new BaseResult<>(Arrays.asList("Order-20231208-001", "Order-20231208-002"));
+    }
+
+    /**
+     * 新增接口：查询充值状态
+     */
+    @RequestMapping(value = "/recharge/status", method = RequestMethod.GET)
+    public BaseResult<String> checkRechargeStatus(@RequestParam String orderId) {
+        return new BaseResult<>("SUCCESS");
     }
 
     @HystrixCommand(fallbackMethod = "rechargeFallback")
