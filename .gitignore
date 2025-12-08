@@ -39,4 +39,4 @@ logs/
 *.log
 
 ### Ignore local test project
-code_diff_project/
+# code_diff_project/

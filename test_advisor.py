@@ -496,6 +496,30 @@ def save_markdown_report(filename, report):
     except Exception as e:
         console.print(f"[red]保存 Markdown 报告失败: {e}[/red]")
 
+def push_report_to_backend(filename, report):
+    """
+    将分析报告推送到 Django 后端数据库
+    """
+    # 注意：如果后端端口不是 8000，请修改此处
+    url = "http://127.0.0.1:8000/api/reports/"
+    
+    # 构造符合后端 Serializer 的数据
+    data = {
+        "file_name": os.path.basename(filename),
+        "change_intent": format_field(report.get('change_intent', '')),
+        "risk_level": str(report.get('risk_level', 'UNKNOWN')),
+        "report_json": report
+    }
+    
+    try:
+        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=2) as response: # 设置短超时，避免阻塞
+            if response.status in [200, 201]:
+                console.print(f"[bold green]✓[/bold green] [dim]已同步至分析大屏[/dim]")
+    except Exception as e:
+        # 不阻断主流程，仅提示
+        pass
+
 def format_field(value):
     """
     格式化字段值，如果是字典或列表，转换为字符串
@@ -582,6 +606,9 @@ def main():
             
             # --- 保存 Markdown 报告 ---
             save_markdown_report(filename, report)
+            
+            # --- 推送至后端 ---
+            push_report_to_backend(filename, report)
 
             console.print("=" * 80)
 

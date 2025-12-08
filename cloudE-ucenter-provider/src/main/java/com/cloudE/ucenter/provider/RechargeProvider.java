@@ -34,6 +34,8 @@ public class RechargeProvider {
     private ApplePayClient applePayClient;
     @Resource
     private com.cloudE.pay.client.PointClient pointClient;
+    @Resource
+    private com.cloudE.ucenter.manager.PointManager pointManager;
 
 
     @HystrixCommand(fallbackMethod = "rechargeFallback")
@@ -51,7 +53,8 @@ public class RechargeProvider {
         
         // 充值成功后增加积分
         if (baseResult.getData()) {
-            pointClient.addPoint(userId, 100); 
+            // Direct call
+            pointClient.addPoint(userId, 100, "Recharge", 3600L); 
         }
         
         LOGGER.info("user {} recharge  res:{}", user.getUsername(), JSON.toJSONString(baseResult));
@@ -98,19 +101,15 @@ public class RechargeProvider {
         LOGGER.info("Batch recharge for valid users: {}, amount: {}", validUserIds, amount);
 
         // 调用复杂的积分批量更新接口
-        // 模拟 Dubbo/Feign 调用场景
+        // 使用 Manager 层封装，模拟多级调用链: RechargeProvider -> PointManager -> PointClient
         try {
-            BaseResult<Map<Long, Boolean>> result = pointClient.batchUpdatePoints(
-                    validUserIds,
-                    amount.intValue(), # 简化转换
-                    "ADD",
-                    source,
-                    true, // async
-                    "{\"trigger\": \"RechargeProvider\", \"batchId\": \"" + System.currentTimeMillis() + "\"}"
-            );
+            boolean success = pointManager.distributePointsBatch(validUserIds, amount.intValue(), source);
             
-            LOGGER.info("Batch point update result: {}", JSON.toJSONString(result));
-            return new BaseResult<>(true, "Batch recharge submitted");
+            if (success) {
+                return new BaseResult<>(true, "Batch recharge submitted via PointManager");
+            } else {
+                return new BaseResult<>(false, "Point distribution failed");
+            }
             
         } catch (Exception e) {
             LOGGER.error("Batch update failed", e);
