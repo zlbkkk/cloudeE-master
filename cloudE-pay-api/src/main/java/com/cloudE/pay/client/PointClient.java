@@ -17,7 +17,8 @@ public interface PointClient {
             @RequestParam("userId") Long userId, 
             @RequestParam("points") Integer points, 
             @RequestParam("source") String source,
-            @RequestParam(value = "expireSeconds", required = false) Long expireSeconds
+            @RequestParam(value = "expireSeconds", required = false) Long expireSeconds,
+            @RequestParam(value = "requestId") String requestId
     );
 
     @RequestMapping(value = "/point/get", method = RequestMethod.GET)
