@@ -13,7 +13,12 @@ import java.util.Map;
 public interface PointClient {
 
     @RequestMapping(value = "/point/add", method = RequestMethod.POST)
-    BaseResult<Boolean> addPoint(@RequestParam("userId") Long userId, @RequestParam("points") Integer points, @RequestParam("source") String source);
+    BaseResult<Boolean> addPoint(
+            @RequestParam("userId") Long userId, 
+            @RequestParam("points") Integer points, 
+            @RequestParam("source") String source,
+            @RequestParam(value = "expireSeconds", required = false) Long expireSeconds
+    );
 
     @RequestMapping(value = "/point/get", method = RequestMethod.GET)
     BaseResult<Integer> getPoints(@RequestParam("userId") Long userId);
