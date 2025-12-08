@@ -36,7 +36,7 @@ public interface PointClient {
      * @return 处理结果映射表
      */
     @RequestMapping(value = "/point/batch/update", method = RequestMethod.POST)
-    BaseResult<Map<Long, Boolean>> ·(
+    BaseResult<Map<Long, Boolean>> batchUpdatePoints(
             @RequestParam("userIds") List<Long> userIds,
             @RequestParam("amount") Integer amount,
             @RequestParam("operationType") String operationType,
