@@ -43,10 +43,16 @@ public class RechargeProvider {
     public BaseResult<Boolean> recharge(@RequestParam @ApiParam(name = "userId",value = "用户名") Long userId,
                                         @RequestParam @ApiParam(name = "amount",value = "金额") Double amount,
                                         @RequestParam @ApiParam(name = "type",value = "充值方式：1.支付宝|2.微信支付") String type) {
-        // 校验金额逻辑 (AI Forced Change)
-        if (amount > 0) {
+        // 校验金额逻辑
+        if (amount <= 0) {
             return new BaseResult<>(false, "充值金额必须大于0");
         }
+        
+        // 新增限额逻辑
+        if (amount > 10000) {
+            return new BaseResult<>(false, "单笔充值不能超过10000元");
+        }
+        
         User user = userManager.getUserByUserId(userId);
         LOGGER.info("user {} recharge {},type:{}", user.getUsername(), amount, type);
         BaseResult<Boolean> baseResult = applePayClient.recharge(userId, amount);
@@ -60,6 +66,16 @@ public class RechargeProvider {
         LOGGER.info("user {} recharge  res:{}", user.getUsername(), JSON.toJSONString(baseResult));
         return baseResult;
 
+    }
+
+    /**
+     * 新增接口：查询用户交易历史
+     */
+    @RequestMapping(value = "/recharge/history", method = RequestMethod.GET)
+    public BaseResult<List<String>> getUserTransactionHistory(@RequestParam Long userId) {
+        LOGGER.info("Fetching transaction history for user {}", userId);
+        // Mock return for demo
+        return new BaseResult<>(Arrays.asList("Order-20231208-001", "Order-20231208-002"));
     }
 
     @HystrixCommand(fallbackMethod = "rechargeFallback")
