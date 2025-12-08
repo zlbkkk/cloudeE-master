@@ -1108,7 +1108,7 @@ const ReportDetail = ({ report }) => {
                  columns={[
                     { title: '服务名', dataIndex: 'service_name', width: 140, render: t => <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-xs font-bold whitespace-nowrap">{t}</span> },
                     { title: '文件路径', dataIndex: 'file_path', width: 300, render: t => (
-                        <div className="font-mono text-xs text-slate-600 truncate max-w-[280px]" title={t}>
+                        <div className="font-mono text-xs text-slate-600 break-all whitespace-normal">
                             {t}
                         </div>
                     )},

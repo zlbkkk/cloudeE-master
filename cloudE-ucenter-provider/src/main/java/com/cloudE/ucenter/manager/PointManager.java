@@ -25,12 +25,14 @@ public class PointManager {
 
     /**
      * 批量发放积分（带重试和日志）
+     * [Modified] Added 'forceSync' parameter to control sync/async behavior
      */
-    public boolean distributePointsBatch(List<Long> userIds, Integer points, String source) {
-        LOGGER.info("Manager distributing points to {} users, amount: {}", userIds.size(), points);
+    public boolean distributePointsBatch(List<Long> userIds, Integer points, String source, boolean forceSync) {
+        LOGGER.info("Manager distributing points to {} users, amount: {}, sync: {}", userIds.size(), points, forceSync);
         
         // 构造扩展信息
-        String extraInfo = String.format("{\"manager_version\": \"v2\", \"timestamp\": %d}", System.currentTimeMillis());
+        String extraInfo = String.format("{\"manager_version\": \"v3\", \"timestamp\": %d, \"force_sync\": %b}", 
+                System.currentTimeMillis(), forceSync);
         
         try {
             // 远程调用
@@ -39,7 +41,7 @@ public class PointManager {
                     points,
                     "ADD",
                     source,
-                    true, // 异步处理
+                    !forceSync, // 如果强制同步，则异步设为false
                     extraInfo
             );
             
