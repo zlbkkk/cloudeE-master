@@ -27,10 +27,17 @@ class LightStaticAnalyzer:
                 package_name = tree.package.name
             
             class_name = ''
+            # Try finding ClassDeclaration
             for path, node in tree.filter(javalang.tree.ClassDeclaration):
                 class_name = node.name
-                break # 只取主类
+                break 
             
+            # If not found, try InterfaceDeclaration
+            if not class_name:
+                for path, node in tree.filter(javalang.tree.InterfaceDeclaration):
+                    class_name = node.name
+                    break
+
             if package_name and class_name:
                 full_name = f"{package_name}.{class_name}"
                 logger.info(f"Parsed Class: {full_name}")

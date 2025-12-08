@@ -278,6 +278,15 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
     const [commits, setCommits] = useState([]);
     const [fetchingCommits, setFetchingCommits] = useState(false);
 
+    // Reset form when modal opens
+    useEffect(() => {
+        if (open) {
+            form.resetFields();
+            setBranches([]);
+            setCommits([]);
+        }
+    }, [open, form]);
+
     const fetchGitBranches = async () => {
         try {
             const values = await form.validateFields(['gitUrl']);
