@@ -117,6 +117,26 @@ public class RechargeProvider {
         }
     }
 
+    @HystrixCommand(fallbackMethod = "rechargeFallback")
+    @RequestMapping(value = "/recharge/compensate", method = RequestMethod.POST)
+    public BaseResult<Boolean> adminCompensatePoints(
+            @RequestParam @ApiParam(name = "userIds", value = "用户ID列表") List<Long> userIds,
+            @RequestParam @ApiParam(name = "points", value = "积分数量") Integer points,
+            @RequestParam @ApiParam(name = "reason", value = "补偿原因") String reason) {
+        
+        LOGGER.warn("Admin compensating points for users: {}, points: {}, reason: {}", userIds, points, reason);
+        // Duplicate call to same interface for testing multiple call sites
+        boolean success = pointManager.distributePointsBatch(userIds, points, "ADMIN_COMPENSATION:" + reason);
+        return new BaseResult<>(success);
+    }
+
+    @RequestMapping(value = "/recharge/test-distribute", method = RequestMethod.POST)
+    public BaseResult<Boolean> testPointDistribute() {
+        // Test call site 3 for verification
+        List<Long> testUsers = Arrays.asList(999L, 888L);
+        return new BaseResult<>(pointManager.distributePointsBatch(testUsers, 10, "TEST_RUN"));
+    }
+
     private BaseResult<Boolean> rechargeFallback(Long useId, Double amount, String type, Throwable throwable) {
         LOGGER.error("user:{} recharge,amount:{},type:{}, fail:{}", useId, amount, type, throwable.getMessage(), throwable);
         return new BaseResult<>(false, throwable.getMessage());
