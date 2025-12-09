@@ -2,12 +2,14 @@ package com.cloudE.ucenter.manager;
 
 import com.alibaba.fastjson.JSON;
 import com.cloudE.dto.BaseResult;
+import com.cloudE.dto.PointTransferDTO;
 import com.cloudE.pay.client.PointClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -61,5 +63,25 @@ public class PointManager {
     public void freezeUserPoints(Long userId, Integer amount) {
         LOGGER.info("Freezing points for user {}", userId);
         pointClient.freezePoints(userId, amount);
+    }
+
+    /**
+     * 转账积分
+     */
+    public boolean transferUserPoints(Long fromId, Long toId, BigDecimal amount) {
+        PointTransferDTO dto = new PointTransferDTO();
+        dto.setFromUserId(fromId);
+        dto.setToUserId(toId);
+        dto.setAmount(amount);
+        dto.setReason("USER_TRANSFER");
+        dto.setAsync(true);
+        
+        try {
+            BaseResult<Boolean> result = pointClient.transferPoints(dto);
+            return result.isSuccess() && result.getData();
+        } catch (Exception e) {
+            LOGGER.error("Transfer failed", e);
+            return false;
+        }
     }
 }

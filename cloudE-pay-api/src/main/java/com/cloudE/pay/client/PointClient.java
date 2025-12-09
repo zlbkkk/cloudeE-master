@@ -1,7 +1,9 @@
 package com.cloudE.pay.client;
 
 import com.cloudE.dto.BaseResult;
+import com.cloudE.dto.PointTransferDTO;
 import org.springframework.cloud.netflix.feign.FeignClient;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -58,4 +60,10 @@ public interface PointClient {
             @RequestParam("userId") Long userId,
             @RequestParam("amount") Integer amount
     );
+
+    /**
+     * 积分转账接口 (Cross-Service Complex Change)
+     */
+    @RequestMapping(value = "/point/transfer", method = RequestMethod.POST)
+    BaseResult<Boolean> transferPoints(@RequestBody PointTransferDTO transferDTO);
 }
