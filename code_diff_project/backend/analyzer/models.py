@@ -29,6 +29,8 @@ class AnalysisTask(models.Model):
     
     project_name = models.CharField(max_length=255, verbose_name="项目名称")
     mode = models.CharField(max_length=20, default='local', verbose_name="模式")
+    source_branch = models.CharField(max_length=255, verbose_name="工作分支", null=True, blank=True)
+    target_branch = models.CharField(max_length=255, verbose_name="基准分支", null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', verbose_name="状态")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")

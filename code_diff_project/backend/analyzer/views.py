@@ -8,6 +8,9 @@ from django.core.management import call_command
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.utils import timezone
+import datetime
+from django.db import models
 from .models import AnalysisReport, AnalysisTask
 from .serializers import AnalysisReportSerializer, AnalysisTaskSerializer
 
@@ -16,6 +19,29 @@ logger = logging.getLogger(__name__)
 class AnalysisTaskViewSet(viewsets.ModelViewSet):
     queryset = AnalysisTask.objects.all()
     serializer_class = AnalysisTaskSerializer
+
+    def list(self, request, *args, **kwargs):
+        # Auto-fail tasks that are stuck in PROCESSING/PENDING for more than 10 minutes
+        try:
+            timeout_threshold = timezone.now() - datetime.timedelta(minutes=10)
+            stuck_tasks = AnalysisTask.objects.filter(
+                status__in=['PENDING', 'PROCESSING'],
+                created_at__lt=timeout_threshold
+            )
+            if stuck_tasks.exists():
+                count = stuck_tasks.count()
+                stuck_tasks.update(
+                    status='FAILED', 
+                    log_details=models.functions.Concat(
+                        models.F('log_details'), 
+                        models.Value('\n[System] Task timed out after 10 minutes (Auto-terminated).')
+                    )
+                )
+                logger.warning(f"Marked {count} stuck tasks as FAILED due to timeout.")
+        except Exception as e:
+            logger.error(f"Error checking task timeouts: {e}")
+            
+        return super().list(request, *args, **kwargs)
 
 class AnalysisReportViewSet(viewsets.ModelViewSet):
     queryset = AnalysisReport.objects.all()
@@ -38,6 +64,7 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
         task = AnalysisTask.objects.create(
             project_name=git_url.split('/')[-1].replace('.git', '') if git_url else 'Local Project',
             mode=mode,
+            source_branch=target_branch,
             status='PENDING',
             log_details='任务已创建，等待执行...'
         )

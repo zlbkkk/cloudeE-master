@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // Re-build trigger
 import axios from 'axios';
-import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio } from 'antd';
+import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio, Pagination } from 'antd';
 import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined, ArrowUpOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -616,6 +616,23 @@ function App() {
     startPolling(); // Start check, will auto-stop if no tasks
   }, [fetchReports, startPolling]);
 
+  // Refresh data when switching tabs
+  useEffect(() => {
+      if (activeTab === 'reports') {
+          fetchReports();
+      } else if (activeTab === 'tasks') {
+          // Immediately fetch tasks to show latest status
+          axios.get(TASKS_URL).then(res => {
+              setTasks(res.data);
+              // Restart polling if there are active tasks and polling loop has stopped
+              const hasActive = res.data.some(t => ['PENDING', 'PROCESSING'].includes(t.status));
+              if (hasActive) {
+                  startPolling();
+              }
+          }).catch(console.error);
+      }
+  }, [activeTab, fetchReports, startPolling]);
+
   // Manual refresh helper
   const refreshData = React.useCallback(() => {
       fetchReports();
@@ -931,19 +948,43 @@ function App() {
 
 // New Component: Project Overview
 const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
-    // Group reports by time (minute precision) to simulate Task Grouping
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 10; // Show 10 tasks per page
+
+    // Group reports by Task ID (preferred) or time
     const groupedReports = useMemo(() => {
         const groups = {};
         reports.forEach(r => {
-            const date = new Date(r.created_at);
-            // Key: YYYY-MM-DD HH:mm
-            const key = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+            let key;
+            if (r.task) {
+                // Group by Task ID ONLY to avoid splitting due to analysis time diff
+                key = `Task #${r.task}`;
+            } else {
+                // Fallback to fuzzy time grouping
+                const date = new Date(r.created_at);
+                key = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+            }
+            
             if (!groups[key]) groups[key] = [];
             groups[key].push(r);
         });
-        // Sort keys desc
-        return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+        
+        // Sort keys: Task IDs desc, then time strings desc
+        return Object.entries(groups).sort((a, b) => {
+            // Extract numbers if Task ID
+            const taskMatchA = a[0].match(/Task #(\d+)/);
+            const taskMatchB = b[0].match(/Task #(\d+)/);
+            
+            if (taskMatchA && taskMatchB) {
+                return parseInt(taskMatchB[1]) - parseInt(taskMatchA[1]);
+            }
+            return b[0].localeCompare(a[0]);
+        });
     }, [reports]);
+
+    // Calculate pagination
+    const totalTasks = groupedReports.length;
+    const currentTasks = groupedReports.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
     return (
         <div className="max-w-6xl mx-auto">
@@ -952,22 +993,30 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                     <FolderOpenOutlined className="text-blue-500" />
                     {projectName}
                 </h1>
-                <p className="text-slate-500 mt-2">该项目共检测到 {reports.length} 个文件变更记录。</p>
+                <p className="text-slate-500 mt-2">该项目共检测到 {reports.length} 个文件变更记录，共 {totalTasks} 个分析批次。</p>
             </div>
             
             <div className="space-y-10 pb-10">
-                {groupedReports.map(([timeKey, groupReports], idx) => (
-                    <div key={timeKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                {currentTasks.map(([batchKey, groupReports], idx) => {
+                    // Global index for display
+                    const globalIdx = (currentPage - 1) * pageSize + idx;
+                    
+                    // Calculate representative time for the batch (e.g., latest file time)
+                    const latestTime = new Date(Math.max(...groupReports.map(r => new Date(r.created_at))));
+                    const timeDisplay = latestTime.toLocaleString();
+
+                    return (
+                    <div key={batchKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
                         <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold">
-                                    {idx + 1}
+                                    {globalIdx + 1}
                                 </div>
                                 <div>
                                     <span className="font-bold text-slate-700 block text-sm">
-                                        分析批次: {timeKey}
+                                        分析批次: {batchKey}
                                     </span>
-                                    <span className="text-[10px] text-slate-400">Created at {timeKey}</span>
+                                    <span className="text-[10px] text-slate-400">最新生成时间: {timeDisplay}</span>
                                 </div>
                             </div>
                             <span className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
@@ -979,7 +1028,7 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                         <Table 
                             dataSource={groupReports} 
                             rowKey="id"
-                            pagination={false}
+                            pagination={{ pageSize: 10 }}
                             size="middle"
                             className="no-border-table"
                             columns={[
@@ -994,10 +1043,19 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                                     dataIndex: 'risk_level',
                                     width: 100,
                                     render: (level) => {
-                                        const colors = { 'CRITICAL': 'red', 'HIGH': 'orange', 'MEDIUM': 'gold', 'LOW': 'green' };
-                                        const labels = { 'CRITICAL': '严重', 'HIGH': '高危', 'MEDIUM': '中等', 'LOW': '低风险' };
+                                        const colors = { 
+                                            'CRITICAL': 'bg-red-500 text-white border-red-600', 
+                                            'HIGH': 'bg-orange-500 text-white border-orange-600', 
+                                            'MEDIUM': 'bg-yellow-500 text-white border-yellow-600', 
+                                            'LOW': 'bg-green-500 text-white border-green-600',
+                                            '严重': 'bg-red-500 text-white border-red-600', 
+                                            '高': 'bg-orange-500 text-white border-orange-600', 
+                                            '中': 'bg-yellow-500 text-white border-yellow-600', 
+                                            '低': 'bg-green-500 text-white border-green-600'
+                                        };
+                                        const colorClass = colors[level] || 'bg-slate-500 text-white border-slate-600';
                                         return (
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border border-${colors[level]}-200 bg-${colors[level]}-50 text-${colors[level]}-600`}>
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${colorClass} shadow-sm`}>
                                                 {level}
                                             </span>
                                         );
@@ -1044,8 +1102,25 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                         />
                     </div>
                 </div>
-                ))}
+                );
+            })}
             </div>
+            
+            {/* Pagination for Tasks */}
+            {totalTasks > pageSize && (
+                <div className="flex justify-center mt-8 pb-8">
+                    <Pagination 
+                        current={currentPage} 
+                        total={totalTasks} 
+                        pageSize={pageSize} 
+                        onChange={(page) => {
+                            setCurrentPage(page);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }} 
+                        showTotal={(total) => `共 ${total} 个分析批次`}
+                    />
+                </div>
+            )}
         </div>
     );
 };
@@ -1062,6 +1137,16 @@ const ReportDetail = ({ report, onBack }) => {
   const renderField = (value) => {
     if (!value) return <span className="text-slate-400">N/A</span>;
     if (typeof value === 'string') {
+        // Try to parse JSON string if it looks like an array or object
+        if ((value.startsWith('[') && value.endsWith(']')) || (value.startsWith('{') && value.endsWith('}'))) {
+            try {
+                const parsed = JSON.parse(value);
+                return renderField(parsed);
+            } catch (e) {
+                // Ignore parse error, treat as string
+            }
+        }
+
         // Auto-format numbered lists (e.g., "1. xxx; 2. xxx")
         if (value.match(/\d+\.\s/)) {
             const items = value.split(/(?=\d+\.\s)/).filter(item => item.trim());
@@ -1125,7 +1210,71 @@ const ReportDetail = ({ report, onBack }) => {
         }
         return value;
     }
+    if (Array.isArray(value)) {
+        return (
+            <ul className="list-none space-y-3">
+                {value.map((item, idx) => (
+                    <li key={idx} className="flex gap-2 items-start">
+                        <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
+                            {idx + 1}
+                        </div>
+                        <div className="flex-1 leading-6 font-medium text-slate-700">
+                             {typeof item === 'string' ? item : renderField(item)}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        );
+    }
+
     if (typeof value === 'object') {
+        // Handle Cross Service Impact (Object with service names as keys)
+        // Detect if values look like { file_path, impact_description } OR arrays of such objects
+        const keys = Object.keys(value);
+        const firstValue = value[keys[0]];
+        const isCrossService = keys.length > 0 && (
+            (firstValue && typeof firstValue === 'object' && (firstValue.impact_description || firstValue.file_path)) || 
+            (Array.isArray(firstValue) && firstValue.length > 0 && (firstValue[0].impact_description || firstValue[0].file_path))
+        );
+
+        if (isCrossService) {
+            // Flatten the structure for rendering: [ {service, ...info}, ... ]
+            let flatItems = [];
+            keys.forEach(serviceName => {
+                const itemOrArray = value[serviceName];
+                if (Array.isArray(itemOrArray)) {
+                    itemOrArray.forEach(item => flatItems.push({ serviceName, ...item }));
+                } else {
+                    flatItems.push({ serviceName, ...itemOrArray });
+                }
+            });
+
+            return (
+                <ul className="list-none space-y-3">
+                    {flatItems.map((info, idx) => (
+                        <li key={idx} className="flex gap-2 items-start">
+                            <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
+                                {idx + 1}
+                            </div>
+                            <div className="flex-1">
+                                    <div className="font-bold text-slate-700 text-xs mb-1 bg-slate-100 inline-block px-1.5 py-0.5 rounded border border-slate-200">
+                                    {info.serviceName}
+                                    </div>
+                                    <div className="text-slate-600 text-xs leading-relaxed">
+                                    {info.impact_description || '暂无详细描述'}
+                                    </div>
+                                    {info.file_path && (
+                                        <div className="mt-1 font-mono text-[10px] text-slate-400 break-all bg-slate-50 p-1 rounded border border-slate-100/50">
+                                        {info.file_path}:{info.line_number}
+                                        </div>
+                                    )}
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            );
+        }
+
         if (value.direct_impact || value.potential_impact) {
             return (
                 <div className="text-xs space-y-1.5 text-slate-600">
@@ -1136,6 +1285,45 @@ const ReportDetail = ({ report, onBack }) => {
                 </div>
             );
         }
+        
+        // Handle structured Functional Impact (JSON with specific keys)
+        if (value.risks || value.data_flow || value.api_impact || value.entry_points || value.business_scenario) {
+             const sections = [
+                { title: '业务场景', content: value.business_scenario, color: 'blue' },
+                { title: '数据流向', content: value.data_flow, color: 'indigo' },
+                { title: 'API 影响', content: value.api_impact, color: 'purple' },
+                { title: '潜在风险', content: value.risks, color: 'red' },
+                { title: '关联入口', content: value.entry_points, color: 'orange' },
+             ].filter(s => s.content && (Array.isArray(s.content) ? s.content.length > 0 : true));
+             
+             return (
+                <div className="space-y-4">
+                    {sections.map((section, idx) => (
+                        <div key={idx} className="text-xs">
+                            <h4 className={`font-bold mb-1.5 flex items-center gap-1.5 text-${section.color}-700`}>
+                                <span className={`w-1.5 h-1.5 rounded-full bg-${section.color}-500`}></span>
+                                {section.title}
+                            </h4>
+                            {Array.isArray(section.content) ? (
+                                <ul className="space-y-1 pl-1">
+                                    {section.content.map((item, i) => (
+                                        <li key={i} className="flex gap-2 items-start text-slate-600 bg-slate-50/50 p-1 rounded-sm">
+                                            <span className="font-mono text-[10px] text-slate-400 select-none mt-0.5">{i+1}.</span>
+                                            <span>{item}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-slate-600 bg-slate-50/50 p-1.5 rounded-sm leading-relaxed border-l-2 border-slate-100 pl-2">
+                                    {section.content}
+                                </p>
+                            )}
+                        </div>
+                    ))}
+                </div>
+             );
+        }
+
         return <pre className="whitespace-pre-wrap text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 text-slate-600 font-mono">{JSON.stringify(value, null, 2)}</pre>;
     }
     return String(value);
@@ -1148,13 +1336,17 @@ const ReportDetail = ({ report, onBack }) => {
 
   const renderRiskBadge = (level) => {
     const colors = { 
-        'CRITICAL': 'bg-red-50 text-red-600 border-red-100', 
-        'HIGH': 'bg-orange-50 text-orange-600 border-orange-100', 
-        'MEDIUM': 'bg-yellow-50 text-yellow-600 border-yellow-100', 
-        'LOW': 'bg-green-50 text-green-600 border-green-100' 
+        'CRITICAL': 'bg-red-500 text-white border-red-600', 
+        'HIGH': 'bg-orange-500 text-white border-orange-600', 
+        'MEDIUM': 'bg-yellow-500 text-white border-yellow-600', 
+        'LOW': 'bg-green-500 text-white border-green-600',
+        '严重': 'bg-red-500 text-white border-red-600',
+        '高': 'bg-orange-500 text-white border-orange-600',
+        '中': 'bg-yellow-500 text-white border-yellow-600',
+        '低': 'bg-green-500 text-white border-green-600'
     };
-    const colorClass = colors[level] || 'bg-slate-50 text-slate-600 border-slate-100';
-    return <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${colorClass}`}>{level} RISK</span>;
+    const colorClass = colors[level] || 'bg-slate-500 text-white border-slate-600';
+    return <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${colorClass} shadow-sm`}>{level}</span>;
   };
 
   return (
@@ -1186,8 +1378,8 @@ const ReportDetail = ({ report, onBack }) => {
                             <FolderOpenOutlined /> {report.project_name || 'Unknown Project'}
                         </span>
                         <span className="text-gray-300">/</span>
-                        <span className="flex items-center gap-1 bg-blue-50/50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100/50">
-                            <BranchesOutlined /> {report.source_branch || 'master'} <ArrowRightOutlined className="text-[10px]" /> {report.target_branch || 'feature/dev'}
+                        <span className="flex items-center gap-1 bg-blue-50/50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100/50" title="工作分支">
+                            <BranchesOutlined /> {report.source_branch || 'master'}
                         </span>
                      </div>
                      

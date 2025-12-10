@@ -226,12 +226,22 @@ class Command(BaseCommand):
                     task_obj = AnalysisTask.objects.get(id=task_id)
                 except: pass
 
+            # 风险等级中文化
+            risk_map = {
+                "CRITICAL": "严重",
+                "HIGH": "高",
+                "MEDIUM": "中",
+                "LOW": "低"
+            }
+            raw_risk = str(report.get('risk_level', 'UNKNOWN')).upper()
+            chinese_risk = risk_map.get(raw_risk, raw_risk)
+
             AnalysisReport.objects.create(
                 project_name=project_name,
                 task=task_obj,
                 file_name=os.path.basename(filename),
                 change_intent=self.format_field(report.get('change_intent', '')),
-                risk_level=str(report.get('risk_level', 'UNKNOWN')),
+                risk_level=chinese_risk,
                 report_json=report,
                 diff_content=diff_content
             )
@@ -399,46 +409,85 @@ class Command(BaseCommand):
         
         prompt = f"""
         # Role
-        你是一名资深的 Java 测试架构师，精通微服务调用链路分析。
-        
+        你是一名资深的 Java 测试架构师，精通微服务调用链路分析、代码变更影响评估、测试策略设计。
+
         # Static Analysis Hints (Hard Facts - 静态分析结果)
         {static_context}
-        注意: "Class A is used by B" 意味着 B 依赖 A (B -> A)，即 B 是调用方 (Consumer)，A 是被调用方 (Provider)。
-        
+        注意: 
+        1. "Class A is used by B" 意味着 B 依赖 A（调用关系：B -> A）；
+        2. B 是「调用方（Consumer）」，A 是「被调用方（Provider）」；
+        3. 仅当 A 发生接口/逻辑变更时，B 才会受影响（即 B 是 A 的下游受影响方）；反之，B 变更不会影响 A。
+
         # Context
         这是一个基于 Spring Cloud 的微服务项目 (Monorepo)。
         项目包含的真实服务模块列表: [{project_structure}]
-        被修改的文件 (Provider): {filename}
+        被修改的文件 (Provider，即被调用方): {filename}
         所属服务: {current_service}
-        
+
         # Cross-Service Impact (关键!)
         脚本检测到该变更可能影响以下下游服务（调用方/Consumer）:
         {downstream_info}
-        
+
         # Git Diff
         {diff_content}
-        
+
         # Requirement
         请基于代码变更和**跨服务调用关系**，生成《微服务精准测试手册》。
         如果存在跨服务调用，请重点分析接口契约变更带来的风险。
-        
-        IMPORTANT:
-        1. 在分析“跨服务影响” (Cross-Service Impact) 时，**必须严格基于** 上面提供的 `Cross-Service Impact` 列表。
-        2. **严禁**将代码中引用的类（如 `PointClient`，这是上游依赖/被调用方）误认为是下游调用方。
-           - 如果代码里用了 `PointClient`，那是本服务在调用别人，属于依赖，而不是别人受我影响（除非我改了接口定义）。
-           - 只有在 `Cross-Service Impact` 列表中明确列出的服务，才是真正的受影响方。
-        3. 在分析“下游依赖”或“影响功能”时，请务必基于上述提供的【项目包含的真实服务模块列表】。
-        4. 禁止编造不存在的服务名称。
-        5. 如果上面的 Cross-Service Impact 中没有跨服务调用（只有内部调用或无），`cross_service_impact` 字段请填 "无" 或 null。
-        6. 不要直接复制下面的 JSON 模板值，请根据实际分析内容填写。
-        
-        請严格按照以下 JSON 格式返回：
+
+        ## 核心规则（必须严格遵守）
+        1. 分析“跨服务影响”时，**仅基于** `Cross-Service Impact` 列表中的服务，禁止扩展至列表外的服务；
+        2. 严禁混淆「上游依赖」和「下游受影响方」：
+        - 示例1：本服务调用 `PointClient`（本服务→Point服务）→ Point服务是上游依赖，本服务变更不会影响Point服务（除非修改了调用Point服务的接口入参）；
+        - 示例2：`Cross-Service Impact` 列表包含「Order服务」→ Order服务调用本服务，本服务变更会影响Order服务（下游受影响方）；
+        3. 分析“下游依赖/影响功能”时，仅使用【项目包含的真实服务模块列表】中的服务名称，禁止编造；
+        4. 若 `Cross-Service Impact` 无跨服务调用（仅内部调用/无），`cross_service_impact` 字段填“无”；
+        5. 禁止直接复制模板值，所有内容需基于实际代码变更填充；
+        6. 风险等级判定规则：
+        - 严重：导致核心业务中断（如转账资金不一致）、数据丢失、大面积服务不可用；
+        - 高：影响核心功能正确性（如积分计算错误），需紧急修复；
+        - 中：影响非核心功能（如日志打印异常），不影响主流程；
+        - 低：仅格式/注释变更，无功能影响；
+        7. 字段无数据时的兜底规则：
+        - line_number/call_snippet 无数据 → 填“无”；
+        - affected_apis 无受影响API → 数组留空（[]）；
+        - downstream_dependency 无依赖 → 数组留空（[]）。
+
+        ## 字段约束（必须严格遵守）
+        ### 1. functional_impact 字段
+        必须是结构化JSON对象（非字符串），每个子字段需满足：
+        - business_scenario：具体到“触发条件+业务动作+结果”，禁止笼统描述（如禁止“转账业务”，需写“用户发起账户间转账且金额≥1000元时，系统新增风控预校验流程，校验不通过则拒绝转账”）；
+        - data_flow：按“请求入口→处理环节→数据存储/流转→输出”的链路描述，包含关键字段变化（如“前端POST请求（含transferAmount/fromUserId）→ TransferController.transfer() → TransferService.validateRisk() → 扣减fromUserId余额 → 增加toUserId余额 → 发送MQ消息（新增riskCheckPass字段）”）；
+        - api_impact：明确“是否变更接口契约、参数/返回值变化、私有/公有方法变更”（如“新增内部方法validateRisk()，不修改对外HTTP API；/api/v1/transfer接口返回值新增riskCheckResult字段”）；
+        - risks：列出具体、可落地的技术风险（如“并发转账时，分布式事务未覆盖积分扣减，导致余额扣减成功但积分未增加”），禁止泛泛而谈；
+        - entry_points：列出代码/接口层面的具体入口（如“API Endpoint: POST /api/v1/user/transfer”、“Java方法: com.user.service.TransferService.initiateTransfer(String fromUserId, String toUserId, BigDecimal amount)”）。
+
+        ### 2. 其他字段约束
+        - code_review_warning：从“代码规范、性能、安全、兼容性、事务一致性”维度分析（如“转账方法未加幂等校验，可能导致重复扣减余额”）；
+        - change_intent：分点总结变更内容（如“1. 新增转账风控预校验逻辑；2. 优化余额扣减的分布式事务流程；3. 补充转账失败的日志打印”）；
+        - affected_apis：仅列出本次变更直接影响的API，包含method/url/description，无则留空数组；
+        - downstream_dependency：仅列出`Cross-Service Impact`中的服务，字段需精准（如caller_method需包含参数类型，如“transfer(String, BigDecimal)”）；
+        - test_strategy：payload示例需贴合代码变更的真实参数，标注必填/选填，验证点需可量化（如“验证余额扣减后，fromUserId的余额=原余额-转账金额，误差≤0.01元”）。
+
+        ## 禁止示例（以下回答无效）
+        1. functional_impact 字段为字符串："functional_impact": "修改了转账逻辑，可能影响用户系统"；
+        2. business_scenario 笼统描述："业务场景：影响转账业务"；
+        3. risks 泛泛而谈："风险：可能影响数据一致性"；
+        4. 编造不存在的服务名称："service_name": "PaymentService"（不在项目服务列表中）。
+
+        请严格按照以下 JSON 格式返回（字段不可缺失，值为字符串的需用双引号包裹）：
         {{
             "code_review_warning": "<代码审查警示>",
-            "change_intent": "<变更详情：请分点总结变更内容。如果是新增类，请将该类的方法作为子项列出，体现层级关系。例如：1. 新增了XX类，包含以下方法：(1) methodA: ... (2) methodB: ...>",
-            "risk_level": "CRITICAL/HIGH/MEDIUM/LOW",
-            "cross_service_impact": "<跨服务影响分析>",
-            "functional_impact": "<详细的功能影响分析>",
+            "change_intent": "<变更详情：请分点总结变更内容。>",
+            "risk_level": "严重/高/中/低",
+            "cross_service_impact": "<跨服务影响分析：需说明受影响的服务、影响的具体环节、风险点>",
+            "functional_impact": {{
+                "business_scenario": "...",
+                "data_flow": "...",
+                "api_impact": "...",
+                "risks": ["..."],
+                "entry_points": ["..."]
+            }},
             "affected_apis": [
                 {{
                     "method": "GET/POST/PUT/DELETE",
@@ -452,7 +501,7 @@ class Command(BaseCommand):
                     "file_path": "<文件路径>",
                     "line_number": "<行号>",
                     "caller_class": "<调用方类名>",
-                    "caller_method": "<调用方方法签名>",
+                    "caller_method": "<调用方方法签名（含参数类型）>",
                     "target_method": "<被调用的目标方法/API>",
                     "call_snippet": "<调用处的代码片段>",
                     "impact_description": "<该调用点可能受到的具体影响>"
@@ -460,11 +509,11 @@ class Command(BaseCommand):
             ],
             "test_strategy": [
                 {{
-                    "title": "<测试场景>",
+                    "title": "<测试场景（如：正常转账-金额100元）>",
                     "priority": "P0/P1",
                     "steps": "<详细测试步骤：包含前置条件、操作步骤（如接口调用、参数设置）>",
-                    "payload": "<Payload示例 (必须是JSON格式)>",
-                    "validation": "<验证点>"
+                    "payload": "<Payload示例 (必须是JSON格式，标注必填/选填)>",
+                    "validation": "<可量化的验证点>"
                 }}
             ]
         }}
