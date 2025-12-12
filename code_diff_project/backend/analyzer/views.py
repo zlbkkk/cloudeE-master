@@ -65,6 +65,7 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
             project_name=git_url.split('/')[-1].replace('.git', '') if git_url else 'Local Project',
             mode=mode,
             source_branch=target_branch,
+            target_branch=f"{base_commit} -> {target_commit}", # Store comparison range here
             status='PENDING',
             log_details='任务已创建，等待执行...'
         )

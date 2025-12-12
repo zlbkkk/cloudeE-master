@@ -26,7 +26,8 @@ console = Console()
 # --- DeepSeek API 配置 ---
 DEEPSEEK_API_KEY = "sk-onjbfk7nV3bpqi8hZD9stZ8AFlJ9eUu0dyP1iAEpeWdrlTAo"
 DEEPSEEK_API_URL = "https://www.chataiapi.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_MODEL = "gemini-2.5-flash"
+# DEEPSEEK_MODEL = "deepseek-chat"
 USE_DEEPSEEK_API = True
 
 class Command(BaseCommand):
@@ -513,14 +514,14 @@ class Command(BaseCommand):
         ### 1. functional_impact 字段
         必须是结构化JSON对象（非字符串），每个子字段需满足：
         - business_scenario：具体到“触发条件+业务动作+结果”，禁止笼统描述（如禁止“转账业务”，需写“用户发起账户间转账且金额≥1000元时，系统新增风控预校验流程，校验不通过则拒绝转账”）；
-        - data_flow：按“请求入口→处理环节→数据存储/流转→输出”的链路描述，包含关键字段变化（如“前端POST请求（含transferAmount/fromUserId）→ TransferController.transfer() → TransferService.validateRisk() → 扣减fromUserId余额 → 增加toUserId余额 → 发送MQ消息（新增riskCheckPass字段）”）；
-        - api_impact：明确“是否变更接口契约、参数/返回值变化、私有/公有方法变更”（如“新增内部方法validateRisk()，不修改对外HTTP API；/api/v1/transfer接口返回值新增riskCheckResult字段”）；
-        - risks：列出具体、可落地的技术风险（如“并发转账时，分布式事务未覆盖积分扣减，导致余额扣减成功但积分未增加”），禁止泛泛而谈；
+        - data_flow：按步骤详细描述数据流转过程，必须使用序号（1. 2. 3.）分步说明，禁止使用箭头（→）简单连接。每一步需包含：涉及的方法/组件、关键逻辑判断、数据变更（如字段状态变化）。示例：“1. 用户调用 /api/transfer 接口，传入 amount=100... 2. TransferController 接收请求，调用 UserManager.initiateTransfer()... 3. 校验余额充足后，扣减 A 账户余额...”）；
+        - api_impact：详细分析API及方法层面的影响。需包含：1. 具体变更的方法及其内部逻辑变化（如“UserManager.initiateTransfer方法内部逻辑变更，新增了对PointClient.addPoint的调用”）；2. 该变更带来的额外业务影响/连带变更（禁止使用“副作用”一词，需直白描述，如“在转账成功的同时，系统将额外自动执行积分增加操作”）；3. 接口契约（URL、参数、返回值）是否发生物理变更；4. 若涉及跨服务调用，明确说明作为调用方的影响（如“不影响下游服务接口契约，但引入了新的依赖”）。禁止简单一句话描述。
+        - risks：必须返回一个详细的字符串数组，每项代表一个具体的风险点。格式要求：使用 "**风险类别**: 详细描述" 的形式。**建议考虑（但不限于）以下维度，请根据实际变更灵活调整**：**数据一致性**（如分布式事务）、**幂等性**、**性能影响**（RT增加）、**可用性**（依赖风险）、**错误处理**（回滚/补偿）、**安全风险**、**兼容性**。示例：“**数据一致性**: 若 pointClient 调用超时，本地事务已提交，导致数据不一致...”。禁止简单的单行描述。
         - entry_points：列出代码/接口层面的具体入口（如“API Endpoint: POST /api/v1/user/transfer”、“Java方法: com.user.service.TransferService.initiateTransfer(String fromUserId, String toUserId, BigDecimal amount)”）。
 
         ### 2. 其他字段约束
         - code_review_warning：从“代码规范、性能、安全、兼容性、事务一致性”维度分析（如“转账方法未加幂等校验，可能导致重复扣减余额”）；
-        - change_intent：分点总结变更内容（如“1. 新增转账风控预校验逻辑；2. 优化余额扣减的分布式事务流程；3. 补充转账失败的日志打印”）；
+        - change_intent：变更详情。请返回一个对象数组，每个对象包含 "summary"（核心变更点）和 "details"（详细说明列表）。例如：[{{ "summary": "新增转账接口", "details": ["接收A、B参数", "调用Service处理逻辑", "增加Hystrix熔断"] }}]；
         - affected_apis：仅列出本次变更直接影响的API，包含method/url/description，无则留空数组；
         - downstream_dependency：仅列出`Cross-Service Impact`中的服务，字段需精准（如caller_method需包含参数类型，如“transfer(String, BigDecimal)”）；
         - test_strategy：payload示例需贴合代码变更的真实参数，标注必填/选填，验证点需可量化（如“验证余额扣减后，fromUserId的余额=原余额-转账金额，误差≤0.01元”）。
@@ -534,12 +535,17 @@ class Command(BaseCommand):
         请严格按照以下 JSON 格式返回（字段不可缺失，值为字符串的需用双引号包裹）：
         {{
             "code_review_warning": "<代码审查警示>",
-            "change_intent": "<变更详情：请分点总结变更内容。>",
+            "change_intent": [
+                {{
+                    "summary": "<核心变更点1>",
+                    "details": ["<子详情1>", "<子详情2>"]
+                }}
+            ],
             "risk_level": "严重/高/中/低",
             "cross_service_impact": "<跨服务影响分析：需说明受影响的服务、影响的具体环节、风险点>",
             "functional_impact": {{
                 "business_scenario": "...",
-                "data_flow": "...",
+                "data_flow": "1. 步骤一描述...\n2. 步骤二描述...",
                 "api_impact": "...",
                 "risks": ["..."],
                 "entry_points": ["..."]

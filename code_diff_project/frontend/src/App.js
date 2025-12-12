@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // Re-build trigger
 import axios from 'axios';
-import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio, Pagination } from 'antd';
-import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined, ArrowUpOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio, Pagination, Tooltip } from 'antd';
+import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined, ArrowUpOutlined, ArrowLeftOutlined, SwapOutlined, DeploymentUnitOutlined } from '@ant-design/icons';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -530,13 +530,18 @@ const TaskListView = ({ tasks }) => {
                             return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${colorClass}`}>{t}</span>;
                         }},
                         { title: '最新日志', dataIndex: 'log_details', render: t => (
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="text-xs text-slate-400 font-mono truncate flex-1" title={t}>
-                                    {t ? t.trim().split('\n').pop() : '-'}
-                                </div>
-                                <Button type="link" size="small" onClick={() => showLog(t)}>查看详情</Button>
+                            <div className="text-xs text-slate-400 font-mono truncate max-w-md" title={t}>
+                                {t ? t.trim().split('\n').pop() : '-'}
                             </div>
-                        )}
+                        )},
+                        {
+                            title: '操作',
+                            key: 'action',
+                            width: 100,
+                            render: (_, record) => (
+                                <Button type="link" size="small" onClick={() => showLog(record.log_details)}>查看日志</Button>
+                            )
+                        }
                     ]}
                 />
             </div>
@@ -1005,6 +1010,11 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                     const latestTime = new Date(Math.max(...groupReports.map(r => new Date(r.created_at))));
                     const timeDisplay = latestTime.toLocaleString();
 
+                    // Get task info from the first report
+                    const firstReport = groupReports[0] || {};
+                    const branchName = firstReport.source_branch;
+                    const commitRange = firstReport.target_branch;
+
                     return (
                     <div key={batchKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
                         <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
@@ -1013,8 +1023,42 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                                     {globalIdx + 1}
                                 </div>
                                 <div>
-                                    <span className="font-bold text-slate-700 block text-sm">
-                                        分析批次: {batchKey}
+                                    <span className="font-bold text-slate-700 text-sm flex items-center flex-wrap gap-2">
+                                        <span>分析批次: {batchKey}</span>
+                                        {(branchName || commitRange) && (
+                                            <span className="inline-flex items-center gap-2 px-2 py-0.5 bg-indigo-50 border border-indigo-100 rounded text-xs text-indigo-600 font-mono font-normal">
+                                                {branchName && (
+                                                    <span className="flex items-center gap-1">
+                                                        <BranchesOutlined /> {branchName}
+                                                    </span>
+                                                )}
+                                                {branchName && commitRange && <span className="text-indigo-700">/</span>}
+                                                {commitRange && (() => {
+                                                    // Parse commit range: "hash1 -> hash2"
+                                                    const parts = commitRange.split(' -> ');
+                                                    const baseCommit = parts[0] ? parts[0].trim() : '';
+                                                    const targetCommit = parts[1] ? parts[1].trim() : '';
+                                                    
+                                                    const tooltipText = baseCommit && targetCommit 
+                                                        ? `对比的是 ${baseCommit}提交记录 到 ${targetCommit}提交记录 的变更`
+                                                        : "变更对比范围：基准提交 -> 目标提交";
+
+                                                    return (
+                                                        <span className="flex items-center gap-1">
+                                                            <DeploymentUnitOutlined /> 
+                                                            {commitRange}
+                                                            <Tooltip 
+                                                                title={<span className="whitespace-nowrap text-xs">{tooltipText}</span>}
+                                                                placement="top"
+                                                                overlayInnerStyle={{ width: 'max-content', maxWidth: 'none' }}
+                                                            >
+                                                                <InfoCircleOutlined className="text-indigo-700 cursor-help hover:text-indigo-900 ml-1" />
+                                                            </Tooltip>
+                                                        </span>
+                                                    );
+                                                })()}
+                                            </span>
+                                        )}
                                     </span>
                                     <span className="text-[10px] text-slate-400">最新生成时间: {timeDisplay}</span>
                                 </div>
@@ -1228,6 +1272,25 @@ const ReportDetail = ({ report, onBack }) => {
     }
 
     if (typeof value === 'object') {
+        // Handle structured item with summary and details
+        if (value && value.summary && (value.details === undefined || Array.isArray(value.details))) {
+            return (
+                <div className="w-full">
+                     <div className="font-bold text-slate-800 text-sm leading-relaxed mb-2">{value.summary}</div>
+                     {value.details && value.details.length > 0 && (
+                        <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-md border border-slate-100">
+                            {value.details.map((detail, dIdx) => (
+                                <div key={dIdx} className="text-xs text-slate-600 flex gap-2 items-start">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0 opacity-60"></span>
+                                    <span className="leading-relaxed font-medium block w-full">{renderDetailItem(detail)}</span>
+                                </div>
+                            ))}
+                        </div>
+                     )}
+                </div>
+            );
+        }
+
         // Handle Cross Service Impact (Object with service names as keys)
         // Detect if values look like { file_path, impact_description } OR arrays of such objects
         const keys = Object.keys(value);
@@ -1305,18 +1368,42 @@ const ReportDetail = ({ report, onBack }) => {
                                 {section.title}
                             </h4>
                             {Array.isArray(section.content) ? (
-                                <ul className="space-y-1 pl-1">
-                                    {section.content.map((item, i) => (
-                                        <li key={i} className="flex gap-2 items-start text-slate-600 bg-slate-50/50 p-1 rounded-sm">
-                                            <span className="font-mono text-[10px] text-slate-400 select-none mt-0.5">{i+1}.</span>
-                                            <span>{item}</span>
-                                        </li>
-                                    ))}
+                                <ul className="space-y-2 pl-1">
+                                    {section.content.map((item, i) => {
+                                        if (typeof item === 'object' && item !== null && item.summary) {
+                                            return (
+                                                <li key={i} className="flex gap-2 items-start text-slate-600 bg-slate-50/50 p-2 rounded-lg border border-slate-100 shadow-sm">
+                                                     <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
+                                                        {i + 1}
+                                                     </div>
+                                                     <div className="flex-1">
+                                                        <div className="font-medium text-slate-800 leading-relaxed">{item.summary}</div>
+                                                        {item.details && Array.isArray(item.details) && item.details.length > 0 && (
+                                                            <div className="mt-2 space-y-1.5">
+                                                                {item.details.map((detail, dIdx) => (
+                                                                    <div key={dIdx} className="text-xs text-slate-500 flex gap-2 items-start bg-white p-1.5 rounded border border-slate-100">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 flex-shrink-0"></span>
+                                                                        <span className="leading-relaxed block w-full">{renderDetailItem(detail)}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                     </div>
+                                                </li>
+                                            );
+                                        }
+                                        return (
+                                            <li key={i} className="flex gap-2 items-start text-slate-600 bg-slate-50/50 p-1 rounded-sm">
+                                                <span className="font-mono text-[10px] text-slate-400 select-none mt-0.5">{i+1}.</span>
+                                                <span>{typeof item === 'string' ? renderDetailItem(item) : JSON.stringify(item)}</span>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             ) : (
-                                <p className="text-slate-600 bg-slate-50/50 p-1.5 rounded-sm leading-relaxed border-l-2 border-slate-100 pl-2">
-                                    {section.content}
-                                </p>
+                                <div className="text-slate-600 bg-slate-50/50 p-1.5 rounded-sm leading-relaxed border-l-2 border-slate-100 pl-2">
+                                    {renderDetailItem(section.content)}
+                                </div>
                             )}
                         </div>
                     ))}
@@ -1327,6 +1414,75 @@ const ReportDetail = ({ report, onBack }) => {
         return <pre className="whitespace-pre-wrap text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 text-slate-600 font-mono">{JSON.stringify(value, null, 2)}</pre>;
     }
     return String(value);
+  };
+
+  const renderDetailItem = (text) => {
+      if (typeof text !== 'string') return text;
+      
+      // 1. Handle Arrow Flows ("->" or "→")
+      if (text.includes('→') || text.includes('->')) {
+          const arrowParts = text.split(/→|->/).map(p => p.trim()).filter(p => p);
+          if (arrowParts.length > 1) {
+              return (
+                  <div className="flex flex-col gap-2 w-full mt-1">
+                      {arrowParts.map((part, idx) => (
+                          <div key={idx} className="flex flex-col items-start relative">
+                              {/* Connector Line (except for last item) */}
+                              {idx < arrowParts.length - 1 && (
+                                  <div className="absolute left-2.5 top-6 bottom-0 w-0.5 bg-slate-200 h-full -mb-2 z-0"></div>
+                              )}
+                              
+                              <div className="flex gap-2 items-start z-10 relative">
+                                  {/* Step Number/Icon */}
+                                  <div className="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 select-none shadow-sm">
+                                      {idx + 1}
+                                  </div>
+                                  
+                                  {/* Content */}
+                                  <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1 text-slate-700 leading-relaxed text-xs">
+                                      {part}
+                                  </div>
+                              </div>
+                              
+                              {/* Down Arrow Icon (visual only, between items) */}
+                              {idx < arrowParts.length - 1 && (
+                                  <div className="ml-2.5 my-0.5 text-slate-300 text-[10px]">
+                                      <ArrowDownOutlined />
+                                  </div>
+                              )}
+                          </div>
+                      ))}
+                  </div>
+              );
+          }
+      }
+
+      // 2. Handle Numbered Lists ("1. ", "2. ")
+      // Split by "1. ", "2. " patterns occurring at start or after punctuation/space
+      // Using lookahead to keep the number with the item
+      const parts = text.split(/(?:^|[\s。；;])(?=\d+[.、．]\s*)/).filter(p => p.trim());
+      
+      if (parts.length > 1) {
+          return (
+              <div className="flex flex-col gap-1.5 w-full mt-0.5">
+                  {parts.map((part, idx) => {
+                      const cleanPart = part.trim();
+                      // Highlight the number prefix
+                      const match = cleanPart.match(/^(\d+[.、．]\s*)(.*)/s);
+                      if (match) {
+                          return (
+                              <div key={idx} className="flex gap-1.5 items-start">
+                                  <span className="font-mono text-slate-400 font-bold shrink-0 mt-0.5 select-none text-[10px] bg-slate-100 px-1 rounded h-4 flex items-center">{match[1].trim()}</span>
+                                  <span className="leading-relaxed">{match[2]}</span>
+                              </div>
+                          );
+                      }
+                      return <div key={idx}>{cleanPart}</div>;
+                  })}
+              </div>
+          );
+      }
+      return text;
   };
 
   const cleanDiff = (diffText) => {
@@ -1381,6 +1537,14 @@ const ReportDetail = ({ report, onBack }) => {
                         <span className="flex items-center gap-1 bg-blue-50/50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100/50" title="工作分支">
                             <BranchesOutlined /> {report.source_branch || 'master'}
                         </span>
+                        {report.target_branch && (
+                            <>
+                                <span className="text-gray-300">/</span>
+                                <span className="flex items-center gap-1 bg-purple-50/50 text-purple-600 px-1.5 py-0.5 rounded border border-purple-100/50" title="比对范围">
+                                    <SwapOutlined /> {report.target_branch}
+                                </span>
+                            </>
+                        )}
                      </div>
                      
                      <div className="flex items-center gap-3 mb-0.5">
@@ -1560,31 +1724,77 @@ const ReportDetail = ({ report, onBack }) => {
                  dataSource={data.test_strategy} 
                  rowKey="title" 
                  pagination={false} 
+                 size="small"
+                 bordered={false}
+                 className="compact-table"
+                 // Remove global rowClassName to allow per-column control
                  columns={[
                     { 
                         title: '优先级', 
                         dataIndex: 'priority', 
-                        width: 80,
+                        width: 70,
+                        // Ensure vertical center alignment
+                        onCell: () => ({ style: { verticalAlign: 'middle', textAlign: 'center' } }),
                         render: t => {
                             const colors = { 'P0': 'text-red-600 bg-red-50 border-red-100', 'P1': 'text-orange-600 bg-orange-50 border-orange-100', 'P2': 'text-blue-600 bg-blue-50 border-blue-100' };
-                            return <span className={`px-2 py-0.5 rounded border text-xs font-bold ${colors[t] || 'text-slate-600 bg-slate-50'}`}>{t}</span>;
+                            return <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold ${colors[t] || 'text-slate-600 bg-slate-50'}`}>{t}</span>;
                         }
                     },
-                    { title: '场景标题', dataIndex: 'title', width: 180, render: t => <span className="font-bold text-slate-700">{t}</span> },
-                    { title: '测试步骤', dataIndex: 'steps', render: t => <div className="text-xs text-slate-600 whitespace-pre-wrap">{renderField(t)}</div> },
+                    { 
+                        title: '场景标题', 
+                        dataIndex: 'title', 
+                        width: 180, 
+                        // Ensure vertical center alignment
+                        onCell: () => ({ style: { verticalAlign: 'middle' } }),
+                        render: t => <span className="font-bold text-slate-700 text-xs leading-tight block">{t}</span> 
+                    },
+                    { 
+                        title: '测试步骤', 
+                        dataIndex: 'steps', 
+                        width: 350, 
+                        render: (text) => {
+                            if (!text) return '-';
+                            // Custom compact list render for steps
+                            const items = typeof text === 'string' ? text.split(/(?:^|[\s。；;])(?=\d+[.、．]\s*)/).filter(p => p.trim()) : [];
+                            
+                            if (items.length > 1) {
+                                return (
+                                    <div className="flex flex-col gap-1 w-full text-[11px] whitespace-normal">
+                                        {items.map((part, idx) => {
+                                            const match = part.trim().match(/^(\d+[.、．]\s*)(.*)/s);
+                                            if (match) {
+                                                return (
+                                                    <div key={idx} className="flex gap-1.5 items-start">
+                                                        <span className="font-mono text-slate-400 font-bold shrink-0 select-none text-[9px] bg-slate-50 px-1 rounded h-3.5 flex items-center justify-center leading-none mt-0.5 min-w-[16px] border border-slate-100">{match[1].trim().replace(/[.、．]/,'')}</span>
+                                                        <span className="leading-snug text-slate-600">{match[2]}</span>
+                                                    </div>
+                                                );
+                                            }
+                                            return <div key={idx} className="leading-snug text-slate-600">{part}</div>;
+                                        })}
+                                    </div>
+                                );
+                            }
+                            return <div className="text-[11px] text-slate-600 whitespace-pre-wrap leading-snug">{renderField(text)}</div>;
+                        }
+                    },
                     { 
                         title: 'Payload 示例', 
                         dataIndex: 'payload', 
-                        width: 250,
+                        width: 220,
                         render: t => (
-                            <div className="bg-slate-50 rounded border border-slate-200 p-2 font-mono text-[10px] text-slate-600 max-h-32 overflow-y-auto custom-scrollbar">
+                            <div className="bg-slate-50 rounded border border-slate-200 p-1.5 font-mono text-[10px] text-slate-600 max-h-[300px] overflow-y-auto custom-scrollbar leading-tight break-all">
                                 {typeof t === 'object' ? JSON.stringify(t, null, 2) : t}
                             </div>
                         )
                     },
-                    { title: '验证点', dataIndex: 'validation', width: 200, render: t => <div className="text-xs text-slate-600">{renderField(t)}</div> }
+                    { 
+                        title: '验证点', 
+                        dataIndex: 'validation', 
+                        width: 300, 
+                        render: t => <div className="text-[11px] text-slate-600 leading-snug whitespace-normal">{renderField(t)}</div> 
+                    }
                  ]}
-                 size="middle"
                  scroll={{ x: 'max-content' }}
               />
           </div>

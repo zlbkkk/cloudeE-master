@@ -165,7 +165,10 @@ class ApiUsageTracer:
                         if ann.name in ['RestController', 'Controller']:
                             is_controller = True
                         if ann.name == 'RequestMapping':
-                            base_path = self._extract_value_from_annotation(ann)
+                            # Extract base path from Class-level @RequestMapping
+                            extracted = self._extract_value_from_annotation(ann)
+                            if extracted:
+                                base_path = extracted
                 
                 if not is_controller:
                     continue
@@ -217,7 +220,13 @@ class ApiUsageTracer:
                         return elem.value.value.strip('"')
         # Case 2: Key-value pair (handled above if list) or single value
         elif hasattr(ann.element, 'value'):
+             # Handle Literal directly
             return ann.element.value.strip('"')
+        
+        # Case 3: Single value but it's a Literal object directly (not in a pair)
+        # javalang parser structure varies. Sometimes ann.element IS the Literal.
+        elif isinstance(ann.element, javalang.tree.Literal):
+             return ann.element.value.strip('"')
             
         return ""
 
