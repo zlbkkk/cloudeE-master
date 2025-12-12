@@ -36,7 +36,7 @@ public class UserManager {
         pointManager.distributePointsBatch(ids, 50, "USER_COMPENSATION");
     }
 
-·    /**
+    /**
      * 发起用户间转账
      */
     public void initiateTransfer(Long fromUserId, Long toUserId, double amount) {

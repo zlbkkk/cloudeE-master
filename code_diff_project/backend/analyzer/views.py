@@ -112,7 +112,14 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
                         subprocess.check_call(["git", "fetch", "--all"], cwd=repo_path)
                     
                     # Checkout working branch to ensure workspace has the correct context
-                    if target_branch and target_branch != 'HEAD':
+                    # 优先使用 target_commit，确保工作区代码与分析目标一致
+                    if target_commit and target_commit != 'HEAD':
+                        logger.info(f"[Info] Checking out specific target commit: {target_commit}")
+                        task.log_details += f"切换工作区到目标提交: {target_commit}\n"
+                        task.save()
+                        subprocess.check_call(["git", "reset", "--hard", "HEAD"], cwd=repo_path)
+                        subprocess.check_call(["git", "checkout", target_commit], cwd=repo_path)
+                    elif target_branch and target_branch != 'HEAD':
                         logger.info(f"[Info] Checking out working branch: {target_branch}")
                         task.log_details += f"切换分支到: {target_branch}\n"
                         task.save()

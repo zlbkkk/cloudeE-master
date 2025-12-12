@@ -18,6 +18,7 @@ from rich import box
 from rich.syntax import Syntax
 from analyzer.models import AnalysisReport, AnalysisTask
 from analyzer.static_parser import LightStaticAnalyzer
+from analyzer.api_tracer import ApiUsageTracer
 
 # 初始化 Rich Console
 console = Console()
@@ -85,7 +86,7 @@ class Command(BaseCommand):
             for filename, content in files_map.items():
                 self.update_task_log(task_id, f"正在分析文件: {filename} ...")
                 if USE_DEEPSEEK_API:
-                    report = self.analyze_with_llm(filename, content, project_root, task_id)
+                    report = self.analyze_with_llm(filename, content, project_root, task_id, base_ref, target_ref)
                     
                     if report is None: 
                         self.update_task_log(task_id, f"文件 {filename} 分析失败，生成基础占位报告。")
@@ -298,8 +299,8 @@ class Command(BaseCommand):
             files_diff[current_file] = "\n".join(buffer)
         return files_diff
 
-    def analyze_with_llm(self, filename, diff_content, root_dir, task_id=None):
-        self.print_code_comparison(diff_content)
+    def analyze_with_llm(self, filename, diff_content, root_dir, task_id=None, base_ref=None, target_ref=None):
+        self.print_code_comparison(diff_content, base_ref, target_ref)
         project_structure = self.get_project_structure(root_dir)
         api_info_list = self.extract_api_info(diff_content)
         downstream_callers = []
@@ -404,6 +405,54 @@ class Command(BaseCommand):
         console.print(Panel(f"[bold]发现潜在下游调用方 (Combined & Filtered):[/bold]\n{downstream_info}", title="Link Analysis", border_style="blue", expand=False))
         self.update_task_log(task_id, f"[Link Analysis] 发现 {len(downstream_callers)} 个潜在跨服务调用点。\n{downstream_info}")
 
+        # --- ApiUsageTracer Integration (New) ---
+        affected_api_endpoints = []
+        if filename.endswith(".java"):
+            try:
+                console.print(f"[Info] 正在执行深度 API 链路追踪 (ApiUsageTracer)...", style="bold blue")
+                tracer = ApiUsageTracer(root_dir)
+                
+                # 1. Identify changed methods
+                changed_methods = self.extract_changed_methods(diff_content)
+                console.print(f"[Info] 识别到的变更方法: {changed_methods}", style="dim")
+                
+                # 2. Also try to get class name
+                # We can use static_parser's result if we had access to the class name easily, 
+                # but filename usually gives a hint, or just use simple class name from filename.
+                simple_class_name = os.path.basename(filename).replace(".java", "")
+                
+                # 3. Trace each method
+                for method in changed_methods:
+                    apis = tracer.find_affected_apis(simple_class_name, method)
+                    if apis:
+                        for api in apis:
+                            if api not in affected_api_endpoints:
+                                affected_api_endpoints.append(api)
+            except Exception as e:
+                console.print(f"[yellow]ApiUsageTracer failed: {e}[/yellow]")
+
+        affected_apis_str = "未检测到受影响的 API 入口。"
+        if affected_api_endpoints:
+            affected_apis_str = "\n".join([f"- {api}" for api in affected_api_endpoints])
+            console.print(Panel(f"[bold green]深度追踪发现受影响 API:[/bold green]\n{affected_apis_str}", title="Deep API Trace", border_style="green"))
+            self.update_task_log(task_id, f"[Deep API Trace] 深度追踪发现受影响 API:\n{affected_apis_str}")
+            
+            # --- MERGE INTO CROSS-SERVICE IMPACT ---
+            # Append confirmed API impacts to downstream_info to force AI to recognize them as cross-service impacts
+            if downstream_info == "未检测到明显的跨服务调用引用。" or downstream_info == "未检测到明显的调用引用。":
+                downstream_info = ""
+            
+            downstream_info += "\n\n[Deep API Trace - Confirmed API Impacts]:\n"
+            for api in affected_api_endpoints:
+                # Try to extract service name from URL (heuristic: /service-name/...)
+                # But we don't know the caller service name for sure unless we track it in ApiUsageTracer.
+                # For now, we list them as high priority impacts.
+                downstream_info += f"- [API Impact] Endpoint: {api}\n"
+                downstream_info += f"  Type: Public API (Controller)\n"
+                downstream_info += f"  Risk: High (Direct external entry point)\n"
+        else:
+            console.print("[Info] 深度追踪未发现受影响的 API 入口。", style="dim")
+
         console.print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...", style="bold magenta")
         self.update_task_log(task_id, f"[AI Analysis] 正在请求 AI 分析...")
         
@@ -418,6 +467,11 @@ class Command(BaseCommand):
         2. B 是「调用方（Consumer）」，A 是「被调用方（Provider）」；
         3. 仅当 A 发生接口/逻辑变更时，B 才会受影响（即 B 是 A 的下游受影响方）；反之，B 变更不会影响 A。
 
+        # Deep API Trace (链路追踪结果 - 极高置信度)
+        系统通过 AST 深度分析，确认以下 API 入口直接或间接调用了本次变更的方法：
+        {affected_apis_str}
+        请重点关注这些 API 的回归测试。
+
         # Context
         这是一个基于 Spring Cloud 的微服务项目 (Monorepo)。
         项目包含的真实服务模块列表: [{project_structure}]
@@ -427,6 +481,8 @@ class Command(BaseCommand):
         # Cross-Service Impact (关键!)
         脚本检测到该变更可能影响以下下游服务（调用方/Consumer）:
         {downstream_info}
+        
+        重要提示：如果上述列表中包含 `Deep API Trace - Confirmed API Impacts`，请务必将其视为核心风险，并在 `cross_service_impact` 和 `affected_apis` 字段中详细体现。
 
         # Git Diff
         {diff_content}
@@ -574,13 +630,57 @@ class Command(BaseCommand):
             console.print(f"[red]API Connection Error: {e}[/red]")
             return None, None
 
-    def print_code_comparison(self, diff_text):
+    def print_code_comparison(self, diff_text, base_ref=None, target_ref=None):
         lines = diff_text.splitlines()
         clean_lines = [line for line in lines if not (line.startswith("diff --git") or line.startswith("index ") or line.startswith("--- ") or line.startswith("+++ ") or line.startswith("new file mode") or line.startswith("deleted file mode"))]
         syntax = Syntax("\n".join(clean_lines), "diff", theme="monokai", line_numbers=True, word_wrap=True)
-        console.print(Panel("Code Diff: 变更代码对比", style="bold cyan", expand=False))
+        
+        title = "Code Diff: 变更代码对比"
+        if base_ref and target_ref:
+            title += f" ({base_ref} -> {target_ref})"
+        
+        console.print(Panel(title, style="bold cyan", expand=False))
         console.print(syntax)
         console.print("-" * 80, style="dim")
+
+    def extract_changed_methods(self, diff_text):
+        """
+        Parses the diff text to identify names of methods that were added or modified.
+        This is a heuristic approach using regex on hunk headers and added lines.
+        """
+        changed_methods = set()
+        
+        # Regex to capture method name in hunk header or code line
+        # Matches: public void methodName(...) or protected List<String> methodName(...)
+        # Simplified: (modifiers) (returnType) methodName (params)
+        method_pattern = re.compile(r'(?:public|protected|private|static|\s) +[\w<>\[\]]+\s+(\w+)\s*\(')
+
+        for line in diff_text.splitlines():
+            # 1. Check hunk headers: @@ ... @@ public void methodName(...)
+            if line.startswith('@@'):
+                # Extract the context part after @@ ... @@
+                context_match = re.search(r'@@.*?@@(.*)', line)
+                if context_match:
+                    context = context_match.group(1).strip()
+                    # Try to match method signature in context
+                    m = method_pattern.search(context)
+                    if m:
+                        changed_methods.add(m.group(1))
+
+            # 2. Check added lines: + public void methodName(...)
+            elif line.startswith('+') and not line.startswith('+++'):
+                content = line[1:].strip()
+                # Skip imports and annotations
+                if content.startswith('import ') or content.startswith('@') or content.startswith('package '):
+                    continue
+                # Try to match method definition
+                # We require "{" or end of line to be safer, but abstract methods don't have body.
+                # Let's just match the pattern.
+                m = method_pattern.search(content)
+                if m:
+                    changed_methods.add(m.group(1))
+        
+        return list(changed_methods)
 
     def extract_api_info(self, diff_text):
         api_info_list = []
