@@ -21,10 +21,21 @@ public class PointController {
                                       @RequestParam("requestId") String requestId) {
         log.info("Adding points for user: {}, points: {}", userId, points);
         
-        if (points > 10000) {
-            // [Modified] 修改了日志级别和内容，模拟风控升级
-            log.error("Security Alert: Large point addition detected! userId={}", userId);
+        // [Logic Change 1] 核心风控拦截：单次积分超过5000直接拦截
+        if (points > 5000) {
+            log.error("Security Alert: Point addition rejected due to limit exceeded! userId={}", userId);
+            return new BaseResult<>(false, "Points limit exceeded (Max 5000)");
         }
+        
+        // [Logic Change 2] 业务逻辑增强：特定渠道双倍积分
+        int finalPoints = points;
+        if ("APP_ACTIVITY".equals(source)) {
+            finalPoints = points * 2;
+            log.info("Applying 2x multiplier for APP_ACTIVITY source. Final points: {}", finalPoints);
+        }
+        
+        // TODO: 调用底层Service入库 (模拟)
+        // pointService.save(userId, finalPoints);
         
         return new BaseResult<>(true);
     }
