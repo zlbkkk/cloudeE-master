@@ -12,7 +12,6 @@ public class PointController {
 
     /**
      * 新增积分接口
-     * 修改点：增加大额积分预警逻辑
      */
     @PostMapping("/point/add")
     public BaseResult<Boolean> addPoint(@RequestParam("userId") Long userId, 
@@ -22,24 +21,16 @@ public class PointController {
                                       @RequestParam("requestId") String requestId) {
         log.info("Adding points for user: {}, points: {}", userId, points);
         
-        // 模拟业务逻辑变更：大额积分增加风控校验
         if (points > 10000) {
-            log.warn("Large point addition detected! Needs approval.");
-            // 模拟可能的逻辑改变，比如抛出异常或者进入审核流程
-            // return new BaseResult<>(false, "Points too large, pending approval");
+            // [Modified] 修改了日志级别和内容，模拟风控升级
+            log.error("Security Alert: Large point addition detected! userId={}", userId);
         }
         
         return new BaseResult<>(true);
     }
 
-    /**
-     * 查询用户积分历史（模拟新接口变更）
-     */
     @GetMapping("/point/history")
     public BaseResult<String> getPointHistory(@RequestParam("userId") Long userId) {
-        log.info("Querying point history for user: {}", userId);
-        // 新增业务逻辑：增加缓存查询
-        return new BaseResult<>("Mock History Data from Cache");
+        return new BaseResult<>("History Data");
     }
 }
-
