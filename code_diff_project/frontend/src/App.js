@@ -10,8 +10,24 @@ const API_BASE = 'http://127.0.0.1:8000/api/';
 const REPORTS_URL = `${API_BASE}reports/`;
 const TASKS_URL = `${API_BASE}tasks/`;
 
-const FlowchartModal = ({ visible, onClose, data, sourceFile }) => {
+const FlowchartModal = ({ visible, onClose, data, sourceFile, providerService }) => {
   if (!visible || !data) return null;
+
+  // 判断调用类型
+  const normalize = (str) => (str || '').trim().toLowerCase();
+  
+  // Use extracted providerService if available, otherwise fallback to data.target_service
+  const targetService = providerService || data.target_service;
+  
+  const isInternal = normalize(data.service_name) === normalize(targetService) || 
+                     normalize(data.service_name) === normalize(targetService + '-provider') || 
+                     normalize(data.service_name + '-provider') === normalize(targetService);
+
+  const callTypeConfig = isInternal 
+    ? { text: 'Process Internal (本地调用)', color: 'blue', bg: 'bg-blue-50', textCol: 'text-blue-600', border: 'border-blue-100' }
+    : { text: 'RPC / HTTP (跨服务调用)', color: 'orange', bg: 'bg-orange-50', textCol: 'text-orange-600', border: 'border-orange-100' };
+
+  const lineNumber = data.line_number && data.line_number > 0 ? data.line_number : 'N/A';
 
   return (
     <Modal
@@ -19,63 +35,122 @@ const FlowchartModal = ({ visible, onClose, data, sourceFile }) => {
       open={visible}
       onCancel={onClose}
       footer={null}
-      width={700}
+      width={750}
       centered
     >
-      <div className="pt-12 pb-6 px-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col items-center justify-center gap-5 relative overflow-visible">
-         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 opacity-20 rounded-t-lg"></div>
+      <div className="pt-12 pb-6 px-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col items-center justify-center gap-6 relative overflow-visible">
+         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${isInternal ? 'from-blue-400 to-indigo-500' : 'from-orange-400 to-red-500'} opacity-30 rounded-t-lg`}></div>
          
-         {/* Callee Node (Current/Provider) - Moved to Top */}
-         <div className="flex flex-col items-center z-10">
-            <div className="w-72 bg-white border border-blue-200 rounded-lg shadow-sm p-4 text-center relative">
-                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-200 tracking-wider shadow-sm">被调用方 (Provider)</div>
-                 <div className="text-sm font-bold text-slate-800 mt-2">{data.target_service || 'Current Service'}</div>
-                 <div className="text-xs text-slate-600 mt-1.5 font-mono bg-slate-50 rounded py-1 px-2 border border-slate-100">
+         {/* Callee Node (Current/Provider) */}
+         <div className="flex flex-col items-center z-10 w-full">
+            <div className="w-80 bg-white border border-blue-200 rounded-lg shadow-sm p-4 text-center relative hover:shadow-md transition-shadow">
+                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-200 tracking-wider shadow-sm">
+                    被调用方 (Provider)
+                 </div>
+                 <div className="text-sm font-bold text-slate-800 mt-2 flex justify-center items-center gap-2">
+                    <DeploymentUnitOutlined className="text-blue-500"/>
+                    {targetService || 'Current Service'}
+                 </div>
+                 <div className="text-xs text-slate-500 mt-1.5 font-mono bg-slate-50 rounded py-1.5 px-2 border border-slate-100 truncate">
                     {sourceFile}
                  </div>
             </div>
          </div>
 
-         {/* Edge */}
-         <div className="flex flex-col items-center gap-0 z-10">
-             <div className="h-8 w-px bg-slate-300"></div>
-             <div className="bg-white px-3 py-1 rounded-full border border-blue-200 text-xs text-slate-600 flex flex-col items-center shadow-sm z-20 my-1">
-                 <span className="text-[10px] text-blue-500 font-bold mb-0.5">INVOKES</span>
-                 <span className="font-mono font-medium max-w-[200px] truncate text-slate-800 text-[10px]" title={data.target_method}>{data.target_method || 'API / Interface'}</span>
+         {/* Edge with Call Type Label */}
+         <div className="flex flex-col items-center gap-0 z-10 w-full relative">
+             <div className="h-6 w-px bg-slate-300"></div>
+             
+             {/* Call Type Label */}
+             <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-1 ${callTypeConfig.bg} ${callTypeConfig.textCol} border ${callTypeConfig.border} shadow-sm`}>
+                {callTypeConfig.text}
              </div>
+
+             <div className="h-4 w-px bg-slate-300"></div>
+
+             {/* INVOKES Box (Keep Full Text as requested) */}
+             <div className="bg-white px-4 py-2 rounded-lg border border-indigo-100 text-xs text-slate-600 flex flex-col items-center shadow-sm z-20 max-w-[95%]">
+                 <span className="text-[10px] text-indigo-500 font-bold mb-1 uppercase tracking-wider flex items-center gap-1">
+                    <ApiOutlined /> INVOKES
+                 </span>
+                 <Tooltip title={data.target_method}>
+                    <span className="font-mono font-medium text-slate-800 text-[10px] break-all text-center leading-relaxed">
+                        {data.target_method || 'API / Interface'}
+                    </span>
+                 </Tooltip>
+             </div>
+             
+             <div className="h-6 w-px bg-slate-300"></div>
              <ArrowDownOutlined className="text-slate-300 text-lg" />
          </div>
 
-         {/* Caller Node (Downstream/Consumer) - Moved to Bottom */}
-         <div className="flex flex-col items-center z-10">
-            <div className="w-72 bg-white border border-green-200 rounded-lg shadow-sm p-4 text-center relative">
-                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-green-100 text-green-700 px-3 py-1 rounded-full text-[10px] font-bold border border-green-200 tracking-wider shadow-sm">调用方 (Consumer)</div>
-                 <div className="text-sm font-bold text-slate-800 mt-2">{data.service_name || 'Unknown Service'}</div>
-                 <div className="text-xs text-slate-600 mt-1.5 font-mono bg-slate-50 rounded py-1 px-2 border border-slate-100 break-all">
+         {/* Caller Node (Consumer) */}
+         <div className="flex flex-col items-center z-10 w-full">
+            <div className={`w-80 bg-white border ${isInternal ? 'border-green-200' : 'border-orange-200'} rounded-lg shadow-sm p-4 text-center relative hover:shadow-md transition-shadow`}>
+                 <div className={`absolute -top-3 left-1/2 transform -translate-x-1/2 ${isInternal ? 'bg-green-100 text-green-700 border-green-200' : 'bg-orange-100 text-orange-700 border-orange-200'} px-3 py-1 rounded-full text-[10px] font-bold border tracking-wider shadow-sm`}>
+                    调用方 (Consumer)
+                 </div>
+                 
+                 {/* Line Number Badge */}
+                 {lineNumber !== 'N/A' && (
+                    <div className="absolute -right-2 -top-2 bg-slate-800 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-md shadow-sm border border-slate-600">
+                        Line: {lineNumber}
+                    </div>
+                 )}
+
+                 <div className="text-sm font-bold text-slate-800 mt-2 flex justify-center items-center gap-2">
+                    <AppstoreOutlined className={isInternal ? 'text-green-500' : 'text-orange-500'} />
+                    {data.service_name || 'Unknown Service'}
+                 </div>
+                 <div className="text-xs text-slate-600 mt-1.5 font-mono bg-slate-50 rounded py-1.5 px-2 border border-slate-100 break-all">
                     {data.caller_class || data.file_path || 'Unknown Class'}
                  </div>
-                 <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-center gap-1">
-                    <CodeOutlined /> {data.caller_method || 'Method Call'}
+                 <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-50 flex items-center justify-center gap-1">
+                    <CodeOutlined /> 方法: {data.caller_method || 'Method Call'}
                  </div>
             </div>
          </div>
 
          {/* Call Snippet */}
          {data.call_snippet && (
-             <div className="w-full max-w-lg bg-slate-800 rounded-lg p-3 border border-slate-700 shadow-md font-mono text-[10px] text-slate-300 overflow-x-auto z-10">
-                 <div className="text-slate-500 mb-1 uppercase tracking-wider text-[9px] font-bold flex items-center gap-1">
-                     <CodeOutlined /> 调用点代码预览
+             <div className="w-full max-w-xl bg-slate-900 rounded-lg border border-slate-700 shadow-md overflow-hidden z-10 mt-2">
+                 {/* Snippet Header */}
+                 <div className="flex justify-between items-center px-3 py-1.5 bg-slate-800 border-b border-slate-700">
+                     <div className="flex items-center gap-2 text-xs text-slate-400">
+                         <FileTextOutlined />
+                         <span className="font-mono">
+                            {data.file_path ? data.file_path.split(/[/\\]/).pop() : 'Snippet'}
+                            {data.line_number && data.line_number !== 'N/A' && <span className="text-slate-500 ml-1">:{data.line_number}</span>}
+                         </span>
+                     </div>
+                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                        Context Preview
+                     </div>
                  </div>
-                 <pre className="whitespace-pre-wrap break-all">{data.call_snippet}</pre>
+                 
+                 {/* Code Content */}
+                 <div className="p-3 font-mono text-[11px] leading-relaxed text-slate-300 overflow-x-auto">
+                    <pre className="whitespace-pre-wrap break-all">{data.call_snippet}</pre>
+                 </div>
              </div>
          )}
 
-         {/* Impact Box */}
-         <div className="mt-6 w-full max-w-lg bg-orange-50/60 p-4 rounded-lg border border-orange-100 text-xs text-orange-900 flex gap-3 items-start">
-            <BugOutlined className="mt-0.5 text-orange-600 text-base" />
-            <div>
-                <div className="font-bold mb-1 text-orange-800">潜在风险分析</div>
-                <div className="leading-relaxed opacity-90">{data.impact_description}</div>
+         {/* Impact Box (Risk Analysis) */}
+         <div className="mt-4 w-full max-w-xl bg-white p-0 rounded-lg border border-red-100 shadow-sm overflow-hidden">
+            <div className="bg-red-50/50 px-4 py-2 border-b border-red-50 flex items-center gap-2">
+                <BugOutlined className="text-red-500" />
+                <span className="font-bold text-xs text-red-800">潜在风险诊断</span>
+            </div>
+            <div className="p-4 text-xs text-slate-600 leading-relaxed">
+                <div className="flex gap-3">
+                    <div className="shrink-0 mt-0.5">
+                        <InfoCircleOutlined className="text-red-400" />
+                    </div>
+                    <div>
+                        <div className="font-medium text-slate-700 mb-1">变更影响分析：</div>
+                        {data.impact_description || '暂无详细描述'}
+                    </div>
+                </div>
             </div>
          </div>
       </div>
@@ -377,19 +452,19 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
             okButtonProps={{ className: 'bg-blue-600 text-white hover:bg-blue-700 border-none' }}
             width={600}
         >
-            <Form form={form} layout="vertical" initialValues={{ sourceBranch: undefined, targetBranch: undefined, gitUrl: '' }}>
+            <Form form={form} layout="vertical" initialValues={{ sourceBranch: undefined, targetBranch: undefined, gitUrl: '' }} className="space-y-3">
                 
-                <Form.Item name="gitUrl" label="Git 仓库地址" rules={[{ required: true, message: '请输入 Git 地址' }]}>
+                <Form.Item name="gitUrl" label="Git 仓库地址" rules={[{ required: true, message: '请输入 Git 地址' }]} className="mb-2">
                     <Input prefix={<GithubOutlined className="text-slate-400"/>} placeholder="https://github.com/username/repo.git" />
                 </Form.Item>
-                <div className="flex gap-2 mb-4">
-                        <Button onClick={fetchGitBranches} loading={fetchingBranches} icon={<BranchesOutlined />}>
+                <div className="flex gap-2 mb-2">
+                        <Button onClick={fetchGitBranches} loading={fetchingBranches} icon={<BranchesOutlined />} size="small">
                         {fetchingBranches ? '获取中...' : '获取分支列表'}
                         </Button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 mb-4">
-                    <Form.Item name="targetBranch" label="工作分支 (Working Branch)" rules={[{ required: true, message: '请选择工作分支' }]}>
+                <div className="mb-2">
+                    <Form.Item name="targetBranch" label="工作分支 (Working Branch)" rules={[{ required: true, message: '请选择工作分支' }]} className="mb-0">
                         <Select 
                             placeholder="选择要分析的分支"
                             showSearch 
@@ -402,17 +477,18 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
                     </Form.Item>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-2">
                     <div className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-2">
                         <ClockCircleOutlined /> 选择比对范围 (Commit Range)
                     </div>
-                    <Form.Item name="baseCommit" label="起始提交 (Base Commit)" rules={[{ required: true, message: '请选择起始 Commit' }]}>
+                    <Form.Item name="baseCommit" label="起始提交 (Base Commit)" rules={[{ required: true, message: '请选择起始 Commit' }]} className="mb-2">
                         <Select 
                             placeholder={fetchingCommits ? "加载提交记录中..." : "选择起始提交"}
                             showSearch 
                             loading={fetchingCommits}
                             disabled={commits.length === 0}
                             optionLabelProp="label"
+                            size="middle"
                         >
                             {commits.map(c => (
                                 <Select.Option key={c.hash} value={c.hash} label={c.hash.substring(0,7)}>
@@ -428,14 +504,17 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
                             ))}
                         </Select>
                     </Form.Item>
-                    <div className="flex justify-center -my-2 text-slate-300 text-lg"><ArrowDownOutlined /></div>
-                    <Form.Item name="targetCommit" label="结束提交 (Target Commit)" rules={[{ required: true, message: '请选择结束 Commit' }]}>
+                    <div className="flex justify-center -my-3 relative z-10">
+                        <div className="bg-slate-50 p-1 rounded-full text-slate-300 text-sm"><ArrowDownOutlined /></div>
+                    </div>
+                    <Form.Item name="targetCommit" label="结束提交 (Target Commit)" rules={[{ required: true, message: '请选择结束 Commit' }]} className="mb-0">
                         <Select 
                             placeholder={fetchingCommits ? "加载提交记录中..." : "选择结束提交"}
                             showSearch 
                             loading={fetchingCommits}
                             disabled={commits.length === 0}
                             optionLabelProp="label"
+                            size="middle"
                         >
                             {commits.map(c => (
                                 <Select.Option key={c.hash} value={c.hash} label={c.hash.substring(0,7)}>
@@ -453,10 +532,9 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
                     </Form.Item>
                 </div>
 
-                <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700 mt-2 leading-relaxed">
+                <div className="bg-blue-50 p-2.5 rounded-lg text-xs text-blue-700 leading-relaxed">
                     <InfoCircleOutlined className="mr-1" /> 
-                    系统将分析 <b>[工作分支]</b> 上，从历史节点 <b>[起始提交]</b> 演进到 <b>[结束提交]</b> 期间产生的所有代码变更（增量分析）。<br/>
-                    <span className="ml-4 opacity-80">适用于精准评估两次发版之间、或某段开发周期内的代码改动风险。</span>
+                    系统将分析 <b>[工作分支]</b> 上，从 <b>[起始提交]</b> 到 <b>[结束提交]</b> 期间的代码变更。
                 </div>
             </Form>
         </Modal>
@@ -1688,7 +1766,12 @@ const ReportDetail = ({ report, onBack }) => {
                         </div>
                     )},
                     { title: '行号', dataIndex: 'line_number', width: 80, align: 'center', render: t => <span className="font-mono text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">L{t}</span> },
-                    { title: '影响描述', dataIndex: 'impact_description', render: t => <span className="text-xs text-slate-700 leading-relaxed block min-w-[200px]">{t}</span> },
+                    { 
+                        title: '影响描述', 
+                        dataIndex: 'impact_description', 
+                        width: 400, // Fixed width
+                        render: t => <div className="text-xs text-slate-700 leading-relaxed whitespace-normal break-words" style={{ wordBreak: 'break-word' }}>{t}</div> 
+                    },
                     { 
                         title: '依赖流程图', 
                         key: 'action',
@@ -1804,6 +1887,11 @@ const ReportDetail = ({ report, onBack }) => {
         onClose={() => setFlowchartVisible(false)} 
         data={currentFlowData}
         sourceFile={report.file_name}
+        providerService={(() => {
+            if (!report.diff_content) return null;
+            const match = report.diff_content.match(/diff --git a\/([^/]+)\//);
+            return match ? match[1] : null;
+        })()}
       />
     </div>
   );

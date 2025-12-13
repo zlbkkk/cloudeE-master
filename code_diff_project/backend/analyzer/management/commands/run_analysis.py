@@ -300,6 +300,86 @@ class Command(BaseCommand):
             files_diff[current_file] = "\n".join(buffer)
         return files_diff
 
+    def refine_report_with_static_analysis(self, report, root_dir):
+        """
+        Post-process the AI report to fill in missing details (like line numbers) using local static analysis.
+        """
+        if not report or 'downstream_dependency' not in report:
+            return report
+
+        dependencies = report.get('downstream_dependency', [])
+        if not dependencies:
+            return report
+
+        console.print("[Info] Refining report with local code search...", style="dim")
+        
+        for dep in dependencies:
+            # Check if line_number is missing or invalid
+            line_num = dep.get('line_number')
+            is_invalid_line = not line_num or str(line_num).strip() in ['无', 'N/A', '0', '-']
+            
+            if is_invalid_line:
+                file_path = dep.get('file_path')
+                target_method = dep.get('target_method')
+                call_snippet = dep.get('call_snippet')
+                
+                if not file_path: continue
+
+                # Try to find the file locally
+                # AI might return relative path or full path or just filename
+                # We search for it
+                local_path = None
+                
+                # 1. Try direct join
+                candidate = os.path.join(root_dir, file_path)
+                if os.path.exists(candidate):
+                    local_path = candidate
+                else:
+                    # 2. Search by filename
+                    filename = os.path.basename(file_path)
+                    for root, dirs, files in os.walk(root_dir):
+                        if filename in files:
+                            local_path = os.path.join(root, filename)
+                            break
+                
+                if local_path:
+                    try:
+                        with open(local_path, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            
+                        found_line = None
+                        
+                        # Strategy 1: Search for snippet
+                        if call_snippet and call_snippet not in ['无', 'N/A']:
+                            clean_snippet = call_snippet.strip().replace(';', '')
+                            for i, line in enumerate(lines):
+                                if clean_snippet in line:
+                                    found_line = i + 1
+                                    break
+                        
+                        # Strategy 2: Search for target method call
+                        if not found_line and target_method:
+                            # Extract simple method name: com.example.Class.method(args) -> method
+                            simple_method = target_method.split('(')[0].split('.')[-1]
+                            for i, line in enumerate(lines):
+                                if simple_method in line and '(' in line:
+                                    found_line = i + 1
+                                    # Heuristic: if line also contains variable name from caller_class, better
+                                    break
+                        
+                        if found_line:
+                            dep['line_number'] = found_line
+                            console.print(f"[Success] Refined line number for {os.path.basename(local_path)}: {found_line}", style="green")
+                            
+                            # Also refine snippet if empty
+                            if not call_snippet or call_snippet in ['无', 'N/A']:
+                                dep['call_snippet'] = lines[found_line-1].strip()
+
+                    except Exception as e:
+                        console.print(f"[Warning] Failed to refine {file_path}: {e}", style="yellow")
+
+        return report
+
     def analyze_with_llm(self, filename, diff_content, root_dir, task_id=None, base_ref=None, target_ref=None):
         self.print_code_comparison(diff_content, base_ref, target_ref)
         project_structure = self.get_project_structure(root_dir)
@@ -414,7 +494,8 @@ class Command(BaseCommand):
                 tracer = ApiUsageTracer(root_dir)
                 
                 # 1. Identify changed methods
-                changed_methods = self.extract_changed_methods(diff_content)
+                full_path = os.path.join(root_dir, filename)
+                changed_methods = self.extract_changed_methods(diff_content, full_path)
                 console.print(f"[Info] 识别到的变更方法: {changed_methods}", style="dim")
                 
                 # 2. Also try to get class name
@@ -472,6 +553,7 @@ class Command(BaseCommand):
         系统通过 AST 深度分析，确认以下 API 入口直接或间接调用了本次变更的方法：
         {affected_apis_str}
         请重点关注这些 API 的回归测试。
+        **关键指令**：在编写 [test_strategy] 的 [steps] 时，如果上述列表中存在有效的 API 路径，**必须**直接使用该真实路径（例如 `POST /ucenter/user/compensate`），**严禁**使用 `/api/v1/example` 等假设性路径。
 
         # Context
         这是一个基于 Spring Cloud 的微服务项目 (Monorepo)。
@@ -573,7 +655,7 @@ class Command(BaseCommand):
                 {{
                     "title": "<测试场景（如：正常转账-金额100元）>",
                     "priority": "P0/P1",
-                    "steps": "<详细测试步骤：包含前置条件、操作步骤（如接口调用、参数设置）>",
+                    "steps": "<详细测试步骤：包含前置条件、操作步骤（如接口调用、参数设置）。**务必使用 [Deep API Trace] 中识别到的真实 API 路径**>",
                     "payload": "<Payload示例 (必须是JSON格式，标注必填/选填)>",
                     "validation": "<可量化的验证点>"
                 }}
@@ -604,7 +686,13 @@ class Command(BaseCommand):
                 cleaned_content = cleaned_content[3:]
             if cleaned_content.endswith("```"):
                 cleaned_content = cleaned_content[:-3]
-            return json.loads(cleaned_content.strip())
+            
+            report_json = json.loads(cleaned_content.strip())
+            
+            # Post-process refinement
+            report_json = self.refine_report_with_static_analysis(report_json, root_dir)
+            
+            return report_json
         except json.JSONDecodeError:
             console.print(f"[red]解析 AI 响应失败[/red]")
             return None
@@ -649,42 +737,70 @@ class Command(BaseCommand):
         console.print(syntax)
         console.print("-" * 80, style="dim")
 
-    def extract_changed_methods(self, diff_text):
+    def extract_changed_methods(self, diff_text, file_path=None):
         """
-        Parses the diff text to identify names of methods that were added or modified.
-        This is a heuristic approach using regex on hunk headers and added lines.
+        Parses the diff text AND the actual file content to precisely identify changed methods.
+        Uses javalang to map line numbers to methods.
         """
         changed_methods = set()
         
-        # Regex to capture method name in hunk header or code line
-        # Matches: public void methodName(...) or protected List<String> methodName(...)
-        # Simplified: (modifiers) (returnType) methodName (params)
+        # 1. Fallback / Quick Check: Regex on Hunk Header (Legacy)
         method_pattern = re.compile(r'(?:public|protected|private|static|\s) +[\w<>\[\]]+\s+(\w+)\s*\(')
-
         for line in diff_text.splitlines():
-            # 1. Check hunk headers: @@ ... @@ public void methodName(...)
             if line.startswith('@@'):
-                # Extract the context part after @@ ... @@
                 context_match = re.search(r'@@.*?@@(.*)', line)
                 if context_match:
-                    context = context_match.group(1).strip()
-                    # Try to match method signature in context
-                    m = method_pattern.search(context)
-                    if m:
-                        changed_methods.add(m.group(1))
-
-            # 2. Check added lines: + public void methodName(...)
+                    m = method_pattern.search(context_match.group(1).strip())
+                    if m: changed_methods.add(m.group(1))
             elif line.startswith('+') and not line.startswith('+++'):
                 content = line[1:].strip()
-                # Skip imports and annotations
-                if content.startswith('import ') or content.startswith('@') or content.startswith('package '):
-                    continue
-                # Try to match method definition
-                # We require "{" or end of line to be safer, but abstract methods don't have body.
-                # Let's just match the pattern.
-                m = method_pattern.search(content)
-                if m:
-                    changed_methods.add(m.group(1))
+                if not content.startswith(('import ', '@', 'package ')):
+                    m = method_pattern.search(content)
+                    if m: changed_methods.add(m.group(1))
+
+        # 2. Precise AST Mapping (if file exists locally)
+        if file_path and os.path.exists(file_path) and file_path.endswith(".java"):
+            try:
+                import javalang
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    file_content = f.read()
+                
+                # Parse file to get method ranges
+                tree = javalang.parse.parse(file_content)
+                methods = []
+                for _, node in tree.filter(javalang.tree.MethodDeclaration):
+                    if node.name and node.position:
+                        methods.append({'name': node.name, 'start': node.position.line})
+                methods.sort(key=lambda x: x['start'])
+                total_lines = len(file_content.splitlines())
+                for i in range(len(methods)):
+                    if i < len(methods) - 1:
+                        methods[i]['end'] = methods[i+1]['start'] - 1
+                    else:
+                        methods[i]['end'] = total_lines
+
+                # Parse diff to get changed line numbers (in new file)
+                changed_lines = []
+                current_line_num = 0
+                for line in diff_text.splitlines():
+                    if line.startswith('@@'):
+                        match = re.search(r'\+(\d+)(?:,(\d+))?', line)
+                        if match: current_line_num = int(match.group(1))
+                    elif line.startswith('+') and not line.startswith('+++'):
+                        changed_lines.append(current_line_num)
+                        current_line_num += 1
+                    elif not line.startswith('-'):
+                        current_line_num += 1
+                
+                # Map lines to methods
+                for line_num in changed_lines:
+                    for m in methods:
+                        if m['start'] <= line_num <= m['end']:
+                            changed_methods.add(m['name'])
+                            break
+                            
+            except Exception as e:
+                console.print(f"[yellow]Precise method extraction failed: {e}[/yellow]")
         
         return list(changed_methods)
 
