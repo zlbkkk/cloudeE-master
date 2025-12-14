@@ -61,7 +61,9 @@ public class RechargeProvider {
         // 充值成功后增加积分
         if (baseResult.getData()) {
             // Direct call
-            pointClient.addPoint(userId, 100, "Recharge", 3600L); 
+            // [Modified] Changed call to test logic change detection
+            LOGGER.info("Initiating point addition for user {}", userId);
+            pointClient.addPoint(userId, 100, "Recharge", 3600L, "REQ-" + System.currentTimeMillis()); 
         }
         
         LOGGER.info("user {} recharge  res:{}", user.getUsername(), JSON.toJSONString(baseResult));
@@ -179,7 +181,7 @@ public class RechargeProvider {
     
     // New method calling PointClient.getPoints
     public Integer checkUserBalance(Long userId) {
-        BaseResult<Integer> points = pointClient.getPoints(userId);
+        BaseResult<Integer> points = pointClient.getPoints(userId, false); // Added strictMode param
         return points.getData();
     }
     

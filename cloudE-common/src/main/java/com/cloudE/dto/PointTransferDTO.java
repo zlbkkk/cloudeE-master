@@ -9,6 +9,7 @@ public class PointTransferDTO implements Serializable {
     private BigDecimal amount;
     private String reason;
     private Boolean async;
+    private String riskLevel;
 
     public Long getFromUserId() {
         return fromUserId;
@@ -48,6 +49,14 @@ public class PointTransferDTO implements Serializable {
 
     public void setAsync(Boolean async) {
         this.async = async;
+    }
+
+    public String getRiskLevel() {
+        return riskLevel;
+    }
+
+    public void setRiskLevel(String riskLevel) {
+        this.riskLevel = riskLevel;
     }
 }
 

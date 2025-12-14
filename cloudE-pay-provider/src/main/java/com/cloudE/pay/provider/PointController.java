@@ -39,10 +39,15 @@ public class PointController {
             }
 
             // 3. 复杂积分规则引擎
-            // 规则A: 活动来源 (PROMOTION) 且积分 > 500 -> 触发自动风控，状态为 PENDING
-            if ("PROMOTION".equalsIgnoreCase(source) && points > 500) {
+            // 规则A: 活动来源 (PROMOTION) 且积分 > 800 -> 触发自动风控，状态为 PENDING
+            if ("PROMOTION".equalsIgnoreCase(source) && points > 800) {
                 log.info("Promotion large points -> enters manual review");
                 return new BaseResult<>(true, "PENDING_REVIEW"); // 注意：success=true 但 status=PENDING
+            }
+
+            // 规则A.1: VIP 奖金 (VIP_BONUS) -> 记录日志但通过
+            if ("VIP_BONUS".equalsIgnoreCase(source)) {
+                log.info("VIP bonus added");
             }
 
             // 规则B: 系统补偿 (SYSTEM_COMP) -> 无上限，直接通过
@@ -51,10 +56,15 @@ public class PointController {
                 return new BaseResult<>(true, "SUCCESS");
             }
 
-            // 规则C: 普通来源 -> 单次上限 2000
-            if (points > 2000) {
+            // 规则C: 普通来源 -> 单次上限 3000
+            if (points > 3000) {
                 log.warn("Normal source limit exceeded");
                 return new BaseResult<>(false, "LIMIT_EXCEEDED");
+            }
+            
+            // 规则D: 绝对风控熔断
+            if (points > 10000) {
+                 return new BaseResult<>(false, "RISK_CONTROL_REJECT");
             }
 
             return new BaseResult<>(true, "SUCCESS");
