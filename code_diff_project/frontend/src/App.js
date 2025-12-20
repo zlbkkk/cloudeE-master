@@ -13,6 +13,7 @@ import ProjectOverview from './components/ProjectOverview';
 import TaskListView from './components/TaskListView';
 import AnalysisConfigModal from './components/AnalysisConfigModal';
 import ProjectRelations from './pages/ProjectRelations';
+import AutoDiscoveryConfig from './components/AutoDiscoveryConfig';
 
 function App() {
   const [reports, setReports] = useState([]);
@@ -231,6 +232,12 @@ function App() {
             >
                 <LinkOutlined className="text-base" /> 项目关联
             </button>
+            <button 
+                onClick={() => setActiveTab('auto-discovery')}
+                className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'auto-discovery' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+                <FolderOpenOutlined className="text-base" /> 自动发现
+            </button>
         </div>
       </div>
 
@@ -422,6 +429,10 @@ function App() {
           return <ProjectRelations />;
       }
       
+      if (activeTab === 'auto-discovery') {
+          return <AutoDiscoveryConfig />;
+      }
+      
       // Reports view
       if (currentReport) return <ReportDetail report={currentReport} onBack={() => setSelectedReportId(null)} />;
       if (selectedProject) return <ProjectOverview projectName={selectedProject} reports={currentProjectReports} onSelectReport={setSelectedReportId} />;
@@ -445,14 +456,17 @@ function App() {
                {activeTab === 'reports' && <SafetyCertificateOutlined className="text-blue-600" />}
                {activeTab === 'tasks' && <ClockCircleOutlined className="text-blue-600" />}
                {activeTab === 'relations' && <LinkOutlined className="text-blue-600" />}
+               {activeTab === 'auto-discovery' && <FolderOpenOutlined className="text-blue-600" />}
                {activeTab === 'reports' && '精准测试分析大屏'}
                {activeTab === 'tasks' && '分析任务监控台'}
                {activeTab === 'relations' && '项目关联管理'}
+               {activeTab === 'auto-discovery' && '自动项目发现'}
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">
                {activeTab === 'reports' && '基于代码差异与链路分析的智能评估系统'}
                {activeTab === 'tasks' && '实时监控分析任务执行状态'}
                {activeTab === 'relations' && '配置主项目与关联项目的依赖关系'}
+               {activeTab === 'auto-discovery' && '自动发现 Git 组织下的所有项目并分析依赖关系'}
             </p>
           </div>
           <div className="flex items-center gap-3">

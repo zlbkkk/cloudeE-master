@@ -1,6 +1,67 @@
 from django.db import models
 import django.utils.timezone
 
+class GitOrganization(models.Model):
+    """
+    存储 Git 组织配置，用于自动发现项目
+    """
+    name = models.CharField(max_length=255, verbose_name="组织名称")
+    git_server_url = models.CharField(max_length=500, verbose_name="Git服务器地址")
+    git_server_type = models.CharField(
+        max_length=50, 
+        default='gitlab',
+        choices=[
+            ('gitlab', 'GitLab'),
+            ('github', 'GitHub'),
+            ('gitea', 'Gitea'),
+        ],
+        verbose_name="Git服务器类型"
+    )
+    access_token = models.CharField(max_length=500, verbose_name="访问Token")
+    default_branch = models.CharField(max_length=100, default='master', verbose_name="默认分支")
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    last_discovery_at = models.DateTimeField(null=True, blank=True, verbose_name="上次发现时间")
+    discovered_project_count = models.IntegerField(default=0, verbose_name="发现的项目数量")
+    created_at = models.DateTimeField(default=django.utils.timezone.now, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = 'git_organization'
+        unique_together = [['git_server_url', 'name']]
+        ordering = ['-created_at']
+        verbose_name = "Git组织配置"
+        verbose_name_plural = "Git组织配置"
+
+    def __str__(self):
+        return f"{self.name} ({self.git_server_url})"
+
+class DiscoveredProject(models.Model):
+    """
+    存储自动发现的项目信息
+    """
+    organization = models.ForeignKey(GitOrganization, on_delete=models.CASCADE, verbose_name="所属组织")
+    project_name = models.CharField(max_length=255, verbose_name="项目名称")
+    project_path = models.CharField(max_length=500, verbose_name="项目路径")
+    git_url = models.CharField(max_length=500, verbose_name="Git地址")
+    default_branch = models.CharField(max_length=100, default='master', verbose_name="默认分支")
+    description = models.TextField(null=True, blank=True, verbose_name="项目描述")
+    language = models.CharField(max_length=100, null=True, blank=True, verbose_name="主要编程语言")
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    last_analyzed_at = models.DateTimeField(null=True, blank=True, verbose_name="上次分析时间")
+    created_at = models.DateTimeField(default=django.utils.timezone.now, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+    
+
+    class Meta:
+        db_table = 'discovered_project'
+        unique_together = [['organization', 'project_path']]
+        ordering = ['project_name']
+        verbose_name = "发现的项目"
+        verbose_name_plural = "发现的项目"
+
+    def __str__(self):
+        return f"{self.project_name}"
+
 class ProjectRelation(models.Model):
     """
     存储主项目与其关联项目之间的关系。

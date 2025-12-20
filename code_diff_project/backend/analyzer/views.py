@@ -407,3 +407,146 @@ class ProjectRelationViewSet(viewsets.ModelViewSet):
                 {"error": f"Failed to query project relations: {str(e)}"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class GitOrganizationViewSet(viewsets.ModelViewSet):
+    """
+    Git 组织配置管理 ViewSet
+    提供 CRUD 操作和自动发现功能
+    """
+    from .models import GitOrganization, DiscoveredProject
+    from .serializers import GitOrganizationSerializer
+    from .git_provider import create_git_provider
+    
+    queryset = GitOrganization.objects.all()
+    serializer_class = GitOrganizationSerializer
+
+    @action(detail=True, methods=['post'], url_path='test-connection')
+    def test_connection(self, request, pk=None):
+        """
+        测试 Git 组织连接是否正常
+        """
+        try:
+            org = self.get_object()
+            
+            # 创建 Git Provider
+            from .git_provider import create_git_provider
+            provider = create_git_provider(
+                org.git_server_type,
+                org.git_server_url,
+                org.access_token
+            )
+            
+            # 测试连接
+            success, message = provider.test_connection()
+            
+            if success:
+                return Response({
+                    "success": True,
+                    "message": message
+                })
+            else:
+                return Response({
+                    "success": False,
+                    "message": message
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f"[Error] 测试连接失败: {str(e)}")
+            return Response({
+                "success": False,
+                "message": f"测试连接失败: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='discover-projects')
+    def discover_projects(self, request, pk=None):
+        """
+        自动发现组织下的所有项目
+        """
+        try:
+            from .models import DiscoveredProject
+            from .git_provider import create_git_provider
+            
+            org = self.get_object()
+            
+            logger.info(f"[Info] 开始发现组织 '{org.name}' 下的项目...")
+            
+            # 创建 Git Provider
+            provider = create_git_provider(
+                org.git_server_type,
+                org.git_server_url,
+                org.access_token
+            )
+            
+            # 获取项目列表
+            projects = provider.list_projects(org.name)
+            
+            if not projects:
+                return Response({
+                    "success": False,
+                    "message": "未发现任何项目，请检查组织名称和权限"
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 保存或更新项目信息
+            created_count = 0
+            updated_count = 0
+            
+            for proj_data in projects:
+                project, created = DiscoveredProject.objects.update_or_create(
+                    organization=org,
+                    project_path=proj_data['path'],
+                    defaults={
+                        'project_name': proj_data['name'],
+                        'git_url': proj_data['git_url'],
+                        'default_branch': proj_data.get('default_branch', 'master'),
+                        'description': proj_data.get('description', ''),
+                        'language': proj_data.get('language', ''),
+                    }
+                )
+                
+                if created:
+                    created_count += 1
+                else:
+                    updated_count += 1
+            
+            # 更新组织的发现信息
+            org.last_discovery_at = timezone.now()
+            org.discovered_project_count = len(projects)
+            org.save()
+            
+            logger.info(f"[Info] 项目发现完成: 新增 {created_count} 个, 更新 {updated_count} 个")
+            
+            return Response({
+                "success": True,
+                "message": f"发现完成！新增 {created_count} 个项目，更新 {updated_count} 个项目",
+                "total_projects": len(projects),
+                "created_count": created_count,
+                "updated_count": updated_count
+            })
+            
+        except Exception as e:
+            error_msg = f"项目发现失败: {str(e)}\n{traceback.format_exc()}"
+            logger.error(f"[Error] {error_msg}")
+            return Response({
+                "success": False,
+                "message": f"项目发现失败: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DiscoveredProjectViewSet(viewsets.ModelViewSet):
+    """
+    发现的项目管理 ViewSet
+    """
+    from .models import DiscoveredProject
+    from .serializers import DiscoveredProjectSerializer
+    
+    queryset = DiscoveredProject.objects.all()
+    serializer_class = DiscoveredProjectSerializer
+    
+    def get_queryset(self):
+        """支持按组织过滤"""
+        queryset = super().get_queryset()
+        org_id = self.request.query_params.get('organization_id')
+        if org_id:
+            queryset = queryset.filter(organization_id=org_id)
+        return queryset

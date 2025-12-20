@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import AnalysisReport, AnalysisTask, ProjectRelation
+from .models import AnalysisReport, AnalysisTask, ProjectRelation, GitOrganization, DiscoveredProject
 
 class AnalysisTaskSerializer(serializers.ModelSerializer):
     class Meta:
@@ -17,4 +17,19 @@ class AnalysisReportSerializer(serializers.ModelSerializer):
 class ProjectRelationSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectRelation
+        fields = '__all__'
+
+class GitOrganizationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GitOrganization
+        fields = '__all__'
+        extra_kwargs = {
+            'access_token': {'write_only': True}  # Token 不在读取时返回
+        }
+
+class DiscoveredProjectSerializer(serializers.ModelSerializer):
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    
+    class Meta:
+        model = DiscoveredProject
         fields = '__all__'
