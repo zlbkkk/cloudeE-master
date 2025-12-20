@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\analysis\git_operations.py
+# hypothesis_version: 6.148.7
+
+['*.java', '*.properties', '*.sql', '*.xml', '*.yaml', '*.yml', '--', '--short', '[Info] 指定版本间未检测到变更。', 'b/', 'bold cyan', 'diff', 'diff --git', 'dim', 'git', 'rev-parse', 'utf-8']

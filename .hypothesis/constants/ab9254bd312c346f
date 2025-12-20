@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\analysis\report_generator.py
+# hypothesis_version: 6.148.7
+
+['(', '+++ ', '-', '--- ', '.', '0', ';', 'CRITICAL', 'Code Diff: 变更代码对比', 'HIGH', 'LOW', 'MEDIUM', 'N/A', 'UNKNOWN', 'Unknown', '_usage', 'bold cyan', 'call_snippet', 'change_intent', 'completion_tokens', 'deleted file mode', 'diff', 'diff --git', 'dim', 'file_path', 'green', 'index ', 'line_number', 'monokai', 'new file mode', 'prompt_tokens', 'r', 'risk_level', 'target_method', 'total_tokens', 'utf-8', 'yellow', '严重', '中', '低', '无', '高']

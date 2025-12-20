@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\analysis\project_manager.py
+# hypothesis_version: 6.148.7
+
+[120, 300, '--all', '--hard', '--prune', '--verify', '-C', '-fd', 'Missing Git URL', 'Operation timeout', 'checkout', 'clean', 'clone', 'error', 'fetch', 'git', 'main', 'master', 'name', 'path', 'related_project_name', 'reset', 'rev-parse', 'success']

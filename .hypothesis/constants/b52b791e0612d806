@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\analysis\code_analyzer.py
+# hypothesis_version: 6.148.7
+
+[100, 200, 500, '(', '+', '+++', ', ', '-', '.', '.git', '.java', '.xml', '/', '@', '@@', '@@.*?@@(.*)', '@PathVariable', '@RequestBody', '@RequestParam', '\\(([^)]+)\\)', '\\+(\\d+)(?:,(\\d+))?', '\\b', 'api', 'caller_method', 'code_diff_project', 'end', 'file', 'import ', 'line', 'method', 'method_name', 'name', 'package ', 'path', 'private ', 'protected ', 'public ', 'r', 'service', 'snippet', 'start', 'target', 'target_api', 'utf-8']

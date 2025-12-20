@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\analysis\ai_analyzer.py
+# hypothesis_version: 6.148.7
+
+[0.1, 200, '.java', '.xml', '/', 'Authorization', 'Class Dependency', 'Content-Type', 'Deep API Trace', 'Link Analysis', 'Static Analysis', 'Unknown', '[内部调用]', '[跨服务调用]', '\\', '_usage', '```', '```json', 'api', 'application/json', 'blue', 'bold blue', 'bold magenta', 'business_rules', 'choices', 'content', 'controller', 'dim', 'file', 'file_name', 'gemini-2.5-flash', 'green', 'is_internal', 'line', 'message', 'messages', 'model', 'path', 'provider', 'red', 'rest', 'role', 'service', 'snippet', 'stream', 'system', 'target_api', 'target_service', 'temperature', 'total_tokens', 'usage', 'user', '未检测到受影响的 API 入口。', '未检测到明显的调用引用。', '未检测到明显的跨服务调用引用。']

@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\views.py
+# hypothesis_version: 6.148.7
+
+[400, 500, '* ', '--all', '--hard', '--heads', '->', '-a', '..', '.git', '/', 'Analysis started', 'COMPLETED', 'FAILED', 'Git URL is required', 'HEAD', 'HEAD^', 'Local Project', 'PENDING', 'PROCESSING', 'author', 'baseCommit', 'branch', 'branches', 'by-main-project', 'checkout', 'clone', 'commits', 'date', 'enableCrossProject', 'enable_cross_project', 'error', 'fetch', 'get', 'git', 'git-branches', 'git-commits', 'gitUrl', 'git_url', 'hash', 'local', 'log', 'log_details', 'ls-remote', 'main_git_url', 'message', 'mode', 'name', 'post', 'projectPath', 'refs/heads/', 'remotes/origin/', 'reset', 'status', 'targetBranch', 'targetCommit', 'task_id', 'trigger', 'utf-8', 'workspace', '|', '任务已创建，等待执行...\n', '任务开始执行...\n', '关联项目列表:\n', '分析任务已在后台启动。', '分析任务执行完毕。\n', '跨项目分析: 未启用\n']

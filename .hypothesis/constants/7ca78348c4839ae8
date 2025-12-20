@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\backend\settings.py
+# hypothesis_version: 6.148.7
+
+['*', '172.16.190.194', '3306', 'APP_DIRS', 'Aa123456@', 'Asia/Shanghai', 'BACKEND', 'DIRS', 'ENGINE', 'HOST', 'NAME', 'OPTIONS', 'PASSWORD', 'PORT', 'USER', 'analyzer', 'backend.urls', 'charset', 'code_diff_project', 'context_processors', 'corsheaders', 'default', 'django.contrib.admin', 'django.contrib.auth', 'rest_framework', 'root', 'static/', 'utf8mb4', 'zh-hans']

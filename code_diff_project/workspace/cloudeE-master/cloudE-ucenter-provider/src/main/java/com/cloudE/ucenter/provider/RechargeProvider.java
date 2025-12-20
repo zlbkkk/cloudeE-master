@@ -5,6 +5,7 @@ import com.cloudE.dto.BaseResult;
 import com.cloudE.entity.User;
 import com.cloudE.pay.client.ApplePayClient;
 import com.cloudE.ucenter.manager.UserManager;
+import com.cloudE.ucenter.service.TestService;
 import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
 import io.swagger.annotations.ApiParam;
 import org.slf4j.Logger;
@@ -37,6 +38,8 @@ public class RechargeProvider {
     private com.cloudE.pay.client.PointClient pointClient;
     @Resource
     private com.cloudE.ucenter.manager.PointManager pointManager;
+    @Resource
+    private TestService testService;
 
 
     @HystrixCommand(fallbackMethod = "rechargeFallback")
@@ -61,7 +64,9 @@ public class RechargeProvider {
         // 充值成功后增加积分
         if (baseResult.getData()) {
             // Direct call
-            pointClient.addPoint(userId, 100, "Recharge", 3600L); 
+            // [Modified] Changed call to test logic change detection
+            LOGGER.info("Initiating point addition for user {}", userId);
+            pointClient.addPoint(userId, 100, "Recharge", 3600L, "REQ-" + System.currentTimeMillis()); 
         }
         
         LOGGER.info("user {} recharge  res:{}", user.getUsername(), JSON.toJSONString(baseResult));
@@ -86,6 +91,8 @@ public class RechargeProvider {
      */
     @RequestMapping(value = "/recharge/status", method = RequestMethod.GET)
     public BaseResult<String> checkRechargeStatus(@RequestParam String orderId) {
+        // Trace logic test: Call TestService -> TestServiceImpl -> UserMapper.selectByUsername
+        testService.getUserByUsername("admin");
         return new BaseResult<>("SUCCESS");
     }
 
@@ -179,7 +186,7 @@ public class RechargeProvider {
     
     // New method calling PointClient.getPoints
     public Integer checkUserBalance(Long userId) {
-        BaseResult<Integer> points = pointClient.getPoints(userId);
+        BaseResult<Integer> points = pointClient.getPoints(userId, false); // Added strictMode param
         return points.getData();
     }
     

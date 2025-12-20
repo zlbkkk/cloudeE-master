@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\api_tracer.py
+# hypothesis_version: 6.148.7
+
+['"', '.', '.git', '.java', '/', '/+', '@Controller', '@RestController', 'ALL', 'Controller', 'DELETE', 'DeleteMapping', 'GET', 'GetMapping', 'POST', 'PUT', 'PostMapping', 'PutMapping', 'RequestMapping', 'RestController', 'Test', '__pycache__', 'api', 'caller_class', 'caller_method', 'class', 'code_diff_project', 'file', 'implements', 'line', 'member', 'method', 'node_modules', 'path', 'r', 'snippet', 'target', 'test', 'utf-8', 'value', 'venv']

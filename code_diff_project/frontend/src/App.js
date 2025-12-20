@@ -1,646 +1,28 @@
-import React, { useState, useEffect, useMemo } from 'react';
-// Re-build trigger
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Table, Empty, Spin, Button, message, Modal, Form, Input, Select, Tabs, Radio, Pagination, Tooltip } from 'antd';
-import { FileTextOutlined, ClockCircleOutlined, SafetyCertificateOutlined, BugOutlined, PlayCircleOutlined, CodeOutlined, ExpandOutlined, InfoCircleOutlined, CheckCircleOutlined, ProjectOutlined, BranchesOutlined, FolderOpenOutlined, ArrowRightOutlined, DownOutlined, RightOutlined, GithubOutlined, LaptopOutlined, ApiOutlined, AppstoreOutlined, ArrowDownOutlined, ArrowUpOutlined, ArrowLeftOutlined, SwapOutlined, DeploymentUnitOutlined } from '@ant-design/icons';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Empty, Spin } from 'antd';
+import { 
+    ClockCircleOutlined, PlayCircleOutlined, ProjectOutlined, 
+    AppstoreOutlined, FolderOpenOutlined, RightOutlined, DownOutlined, 
+    SafetyCertificateOutlined, LinkOutlined 
+} from '@ant-design/icons';
 
-const API_BASE = 'http://127.0.0.1:8000/api/';
-const REPORTS_URL = `${API_BASE}reports/`;
-const TASKS_URL = `${API_BASE}tasks/`;
-
-const FlowchartModal = ({ visible, onClose, data, sourceFile, providerService }) => {
-  if (!visible || !data) return null;
-
-  // 判断调用类型
-  const normalize = (str) => (str || '').trim().toLowerCase();
-  
-  // Use extracted providerService if available, otherwise fallback to data.target_service
-  const targetService = providerService || data.target_service;
-  
-  const isInternal = normalize(data.service_name) === normalize(targetService) || 
-                     normalize(data.service_name) === normalize(targetService + '-provider') || 
-                     normalize(data.service_name + '-provider') === normalize(targetService);
-
-  const callTypeConfig = isInternal 
-    ? { text: 'Process Internal (本地调用)', color: 'blue', bg: 'bg-blue-50', textCol: 'text-blue-600', border: 'border-blue-100' }
-    : { text: 'RPC / HTTP (跨服务调用)', color: 'orange', bg: 'bg-orange-50', textCol: 'text-orange-600', border: 'border-orange-100' };
-
-  const lineNumber = data.line_number && data.line_number > 0 ? data.line_number : 'N/A';
-
-  return (
-    <Modal
-      title={<span className="flex items-center gap-2"><BranchesOutlined /> 依赖调用链路分析</span>}
-      open={visible}
-      onCancel={onClose}
-      footer={null}
-      width={750}
-      centered
-    >
-      <div className="pt-12 pb-6 px-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col items-center justify-center gap-6 relative overflow-visible">
-         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${isInternal ? 'from-blue-400 to-indigo-500' : 'from-orange-400 to-red-500'} opacity-30 rounded-t-lg`}></div>
-         
-         {/* Callee Node (Current/Provider) */}
-         <div className="flex flex-col items-center z-10 w-full">
-            <div className="w-80 bg-white border border-blue-200 rounded-lg shadow-sm p-4 text-center relative hover:shadow-md transition-shadow">
-                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-200 tracking-wider shadow-sm">
-                    被调用方 (Provider)
-                 </div>
-                 <div className="text-sm font-bold text-slate-800 mt-2 flex justify-center items-center gap-2">
-                    <DeploymentUnitOutlined className="text-blue-500"/>
-                    {targetService || 'Current Service'}
-                 </div>
-                 <div className="text-xs text-slate-500 mt-1.5 font-mono bg-slate-50 rounded py-1.5 px-2 border border-slate-100 truncate">
-                    {sourceFile}
-                 </div>
-            </div>
-         </div>
-
-         {/* Edge with Call Type Label */}
-         <div className="flex flex-col items-center gap-0 z-10 w-full relative">
-             <div className="h-6 w-px bg-slate-300"></div>
-             
-             {/* Call Type Label */}
-             <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-1 ${callTypeConfig.bg} ${callTypeConfig.textCol} border ${callTypeConfig.border} shadow-sm`}>
-                {callTypeConfig.text}
-             </div>
-
-             <div className="h-4 w-px bg-slate-300"></div>
-
-             {/* INVOKES Box (Keep Full Text as requested) */}
-             <div className="bg-white px-4 py-2 rounded-lg border border-indigo-100 text-xs text-slate-600 flex flex-col items-center shadow-sm z-20 max-w-[95%]">
-                 <span className="text-[10px] text-indigo-500 font-bold mb-1 uppercase tracking-wider flex items-center gap-1">
-                    <ApiOutlined /> INVOKES
-                 </span>
-                 <Tooltip title={data.target_method}>
-                    <span className="font-mono font-medium text-slate-800 text-[10px] break-all text-center leading-relaxed">
-                        {data.target_method || 'API / Interface'}
-                    </span>
-                 </Tooltip>
-             </div>
-             
-             <div className="h-6 w-px bg-slate-300"></div>
-             <ArrowDownOutlined className="text-slate-300 text-lg" />
-         </div>
-
-         {/* Caller Node (Consumer) */}
-         <div className="flex flex-col items-center z-10 w-full">
-            <div className={`w-80 bg-white border ${isInternal ? 'border-green-200' : 'border-orange-200'} rounded-lg shadow-sm p-4 text-center relative hover:shadow-md transition-shadow`}>
-                 <div className={`absolute -top-3 left-1/2 transform -translate-x-1/2 ${isInternal ? 'bg-green-100 text-green-700 border-green-200' : 'bg-orange-100 text-orange-700 border-orange-200'} px-3 py-1 rounded-full text-[10px] font-bold border tracking-wider shadow-sm`}>
-                    调用方 (Consumer)
-                 </div>
-                 
-                 {/* Line Number Badge */}
-                 {lineNumber !== 'N/A' && (
-                    <div className="absolute -right-2 -top-2 bg-slate-800 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-md shadow-sm border border-slate-600">
-                        Line: {lineNumber}
-                    </div>
-                 )}
-
-                 <div className="text-sm font-bold text-slate-800 mt-2 flex justify-center items-center gap-2">
-                    <AppstoreOutlined className={isInternal ? 'text-green-500' : 'text-orange-500'} />
-                    {data.service_name || 'Unknown Service'}
-                 </div>
-                 <div className="text-xs text-slate-600 mt-1.5 font-mono bg-slate-50 rounded py-1.5 px-2 border border-slate-100 break-all">
-                    {data.caller_class || data.file_path || 'Unknown Class'}
-                 </div>
-                 <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-50 flex items-center justify-center gap-1">
-                    <CodeOutlined /> 方法: {data.caller_method || 'Method Call'}
-                 </div>
-            </div>
-         </div>
-
-         {/* Call Snippet */}
-         {data.call_snippet && (
-             <div className="w-full max-w-xl bg-slate-900 rounded-lg border border-slate-700 shadow-md overflow-hidden z-10 mt-2">
-                 {/* Snippet Header */}
-                 <div className="flex justify-between items-center px-3 py-1.5 bg-slate-800 border-b border-slate-700">
-                     <div className="flex items-center gap-2 text-xs text-slate-400">
-                         <FileTextOutlined />
-                         <span className="font-mono">
-                            {data.file_path ? data.file_path.split(/[/\\]/).pop() : 'Snippet'}
-                            {data.line_number && data.line_number !== 'N/A' && <span className="text-slate-500 ml-1">:{data.line_number}</span>}
-                         </span>
-                     </div>
-                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                        Context Preview
-                     </div>
-                 </div>
-                 
-                 {/* Code Content */}
-                 <div className="p-3 font-mono text-[11px] leading-relaxed text-slate-300 overflow-x-auto">
-                    <pre className="whitespace-pre-wrap break-all">{data.call_snippet}</pre>
-                 </div>
-             </div>
-         )}
-
-         {/* Impact Box (Risk Analysis) */}
-         <div className="mt-4 w-full max-w-xl bg-white p-0 rounded-lg border border-red-100 shadow-sm overflow-hidden">
-            <div className="bg-red-50/50 px-4 py-2 border-b border-red-50 flex items-center gap-2">
-                <BugOutlined className="text-red-500" />
-                <span className="font-bold text-xs text-red-800">潜在风险诊断</span>
-            </div>
-            <div className="p-4 text-xs text-slate-600 leading-relaxed">
-                <div className="flex gap-3">
-                    <div className="shrink-0 mt-0.5">
-                        <InfoCircleOutlined className="text-red-400" />
-                    </div>
-                    <div>
-                        <div className="font-medium text-slate-700 mb-1">变更影响分析：</div>
-                        {data.impact_description || '暂无详细描述'}
-                    </div>
-                </div>
-            </div>
-         </div>
-      </div>
-    </Modal>
-  );
-};
-
-const getLanguage = (fileName) => {
-  if (!fileName) return 'text';
-  const lower = fileName.toLowerCase();
-  if (lower.endsWith('.java')) return 'java';
-  if (lower.endsWith('.xml')) return 'xml';
-  if (lower.endsWith('.sql')) return 'sql';
-  if (lower.endsWith('.py')) return 'python';
-  if (lower.endsWith('.js') || lower.endsWith('.jsx')) return 'javascript';
-  if (lower.endsWith('.json')) return 'json';
-  if (lower.endsWith('.properties') || lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'ini';
-  return 'text';
-};
-
-const parseDiff = (text) => {
-  const lines = text.split('\n');
-  const rows = [];
-  let leftLine = 0;
-  let rightLine = 0;
-  let bufferDelete = [];
-  let bufferAdd = [];
-
-  const flushBuffer = () => {
-    const maxLen = Math.max(bufferDelete.length, bufferAdd.length);
-    for (let i = 0; i < maxLen; i++) {
-      const delItem = bufferDelete[i] || null;
-      const addItem = bufferAdd[i] || null;
-      rows.push({
-        leftNum: delItem ? delItem.line : '',
-        leftCode: delItem ? delItem.content : '',
-        leftType: delItem ? 'delete' : 'empty',
-        rightNum: addItem ? addItem.line : '',
-        rightCode: addItem ? addItem.content : '',
-        rightType: addItem ? 'add' : 'empty',
-      });
-    }
-    bufferDelete = [];
-    bufferAdd = [];
-  };
-
-  lines.forEach(line => {
-    // Ignore git metadata header lines
-    if (line.startsWith('diff ') || 
-        line.startsWith('index ') || 
-        line.startsWith('new file mode') || 
-        line.startsWith('deleted file mode') ||
-        line.startsWith('similarity index') ||
-        line.startsWith('rename from') ||
-        line.startsWith('rename to') ||
-        line.startsWith('--- ') || 
-        line.startsWith('+++ ') || 
-        line.startsWith('\\')) {
-        return;
-    }
-
-    if (line.startsWith('@@')) {
-      flushBuffer();
-      rows.push({ type: 'header', content: line });
-      const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
-      if (match) {
-        // If left line is 0 (new file), keep it 0. Otherwise adjust index.
-        const lLine = parseInt(match[1], 10);
-        leftLine = lLine === 0 ? 0 : lLine - 1;
-        
-        const rLine = parseInt(match[3], 10);
-        rightLine = rLine === 0 ? 0 : rLine - 1;
-      }
-      return;
-    }
-
-    if (line.startsWith('-')) {
-      leftLine++;
-      bufferDelete.push({ line: leftLine, content: line.substring(1) });
-    } else if (line.startsWith('+')) {
-      rightLine++;
-      bufferAdd.push({ line: rightLine, content: line.substring(1) });
-    } else {
-      flushBuffer();
-      // Only increment if line number is > 0 (handle empty file cases)
-      if (leftLine >= 0) leftLine++;
-      if (rightLine >= 0) rightLine++;
-      rows.push({
-        leftNum: leftLine,
-        leftCode: line.substring(1),
-        leftType: 'normal',
-        rightNum: rightLine,
-        rightCode: line.substring(1),
-        rightType: 'normal',
-      });
-    }
-  });
-  flushBuffer();
-  return rows;
-};
-
-const DiffModal = ({ visible, onClose, diffContent, fileName }) => {
-  const [diffRows, setDiffRows] = useState([]);
-  const language = getLanguage(fileName);
-
-  useEffect(() => {
-    if (diffContent) {
-      setDiffRows(parseDiff(diffContent));
-    }
-  }, [diffContent]);
-
-  return (
-    <Modal
-      title={<span style={{ color: '#d4d4d4' }}><CodeOutlined className="mr-2"/>代码变更详情: {fileName}</span>}
-      open={visible}
-      onCancel={onClose}
-      width="95%"
-      style={{ top: 20 }}
-      footer={[
-        <Button key="close" onClick={onClose} type="primary" ghost style={{ marginRight: 16 }}>
-          关闭视图
-        </Button>
-      ]}
-      closeIcon={<span style={{ color: '#d4d4d4', fontSize: '16px' }}>×</span>}
-      styles={{ 
-        content: { backgroundColor: '#1e1e1e', color: '#d4d4d4', borderRadius: '8px', overflow: 'hidden' },
-        header: { backgroundColor: '#1e1e1e', color: '#d4d4d4', borderBottom: '1px solid #333', padding: '16px 24px' },
-        body: { padding: 0, height: '85vh', overflow: 'hidden', backgroundColor: '#1e1e1e' },
-        footer: { backgroundColor: '#1e1e1e', borderTop: '1px solid #333', padding: '20px 24px' },
-        mask: { backgroundColor: 'rgba(0, 0, 0, 0.85)', backdropFilter: 'blur(4px)' }
-      }}
-    >
-      <div className="h-full overflow-auto font-mono text-xs custom-scrollbar" style={{ backgroundColor: '#1e1e1e' }}>
-        <table className="w-full border-collapse" style={{ color: '#d4d4d4' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#252526', borderBottom: '1px solid #333', color: '#858585' }}>
-              <th className="w-12 p-1 text-right border-r border-[#333] select-none">旧行</th>
-              <th className="w-1/2 p-1 text-left border-r border-[#333] pl-2 select-none">变更前</th>
-              <th className="w-12 p-1 text-right border-r border-[#333] select-none">新行</th>
-              <th className="w-1/2 p-1 text-left pl-2 select-none">变更后</th>
-            </tr>
-          </thead>
-          <tbody>
-            {diffRows.map((row, idx) => {
-              if (row.type === 'header') return null;
-
-              return (
-                <tr key={idx} className="hover:bg-[#2a2d2e]">
-                  <td className="text-right pr-2 text-[#6e7681] select-none border-r border-[#333]" 
-                      style={{ backgroundColor: row.leftType === 'delete' ? 'rgba(248, 81, 73, 0.15)' : 'transparent' }}>
-                    {row.leftNum}
-                  </td>
-                  <td className="pl-0 border-r border-[#333]" 
-                      style={{ backgroundColor: row.leftType === 'delete' ? 'rgba(248, 81, 73, 0.15)' : 'transparent', verticalAlign: 'top' }}>
-                    {row.leftCode && (
-                       <SyntaxHighlighter 
-                         language={language} 
-                         style={vscDarkPlus} 
-                         customStyle={{ margin: 0, padding: '0 0 0 8px', background: 'transparent', fontSize: '12px', lineHeight: '1.5' }}
-                         codeTagProps={{ style: { fontFamily: 'inherit' } }}
-                       >
-                         {row.leftCode}
-                       </SyntaxHighlighter>
-                    )}
-                  </td>
-                  <td className="text-right pr-2 text-[#6e7681] select-none border-r border-[#333]" 
-                      style={{ backgroundColor: row.rightType === 'add' ? 'rgba(46, 160, 67, 0.15)' : 'transparent' }}>
-                    {row.rightNum}
-                  </td>
-                  <td className="pl-0" 
-                      style={{ backgroundColor: row.rightType === 'add' ? 'rgba(46, 160, 67, 0.15)' : 'transparent', verticalAlign: 'top' }}>
-                    {row.rightCode && (
-                       <SyntaxHighlighter 
-                         language={language} 
-                         style={vscDarkPlus} 
-                         customStyle={{ margin: 0, padding: '0 0 0 8px', background: 'transparent', fontSize: '12px', lineHeight: '1.5' }}
-                         codeTagProps={{ style: { fontFamily: 'inherit' } }}
-                       >
-                         {row.rightCode}
-                       </SyntaxHighlighter>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Modal>
-  );
-};
-
-const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
-    const [form] = Form.useForm();
-    const [loading, setLoading] = useState(false);
-    // Default to 'git' mode and remove tab switching
-    const [mode, setMode] = useState('git');
-    const [branches, setBranches] = useState([]);
-    const [fetchingBranches, setFetchingBranches] = useState(false);
-    const [commits, setCommits] = useState([]);
-    const [fetchingCommits, setFetchingCommits] = useState(false);
-
-    // Reset form when modal opens
-    useEffect(() => {
-        if (open) {
-            form.resetFields();
-            setBranches([]);
-            setCommits([]);
-        }
-    }, [open, form]);
-
-    const fetchGitBranches = async () => {
-        try {
-            const values = await form.validateFields(['gitUrl']);
-            setFetchingBranches(true);
-            const res = await axios.post(`${REPORTS_URL}git-branches/`, {
-                git_url: values.gitUrl
-            });
-            if (res.data.branches) {
-                setBranches(res.data.branches);
-                message.success(`成功获取 ${res.data.branches.length} 个分支`);
-            }
-        } catch (error) {
-            message.error('获取分支失败: ' + (error.response?.data?.error || error.message));
-        } finally {
-            setFetchingBranches(false);
-        }
-    };
-
-    const fetchGitCommits = async (branch) => {
-        try {
-            const values = await form.validateFields(['gitUrl']);
-            
-            // Visual feedback: Clear current selection and show loading state
-            setFetchingCommits(true);
-            setCommits([]); 
-            form.setFieldsValue({ baseCommit: undefined, targetCommit: undefined });
-
-            const res = await axios.post(`${REPORTS_URL}git-commits/`, {
-                git_url: values.gitUrl,
-                branch: branch
-            });
-            if (res.data.commits) {
-                setCommits(res.data.commits);
-                message.success(`已加载 ${branch} 分支的 ${res.data.commits.length} 条提交记录`);
-                
-                // Smart defaults: Target=Latest, Base=Previous
-                if (res.data.commits.length > 0) {
-                    const latest = res.data.commits[0].hash;
-                    const previous = res.data.commits.length > 1 ? res.data.commits[1].hash : latest;
-                    form.setFieldsValue({ 
-                        targetCommit: latest,
-                        baseCommit: previous
-                    });
-                }
-            }
-        } catch (error) {
-            message.error('获取提交记录失败: ' + (error.response?.data?.error || error.message));
-        } finally {
-            setFetchingCommits(false);
-        }
-    };
-
-    const handleOk = async () => {
-        try {
-            const values = await form.validateFields();
-            setLoading(true);
-            // Close immediately to improve UX, let background handle it
-            // Actually, we wait for the trigger response (fast) to confirm task creation
-            const res = await axios.post(`${REPORTS_URL}trigger/`, {
-                mode: 'git', 
-                gitUrl: values.gitUrl,
-                targetBranch: values.targetBranch,
-                baseCommit: values.baseCommit,
-                targetCommit: values.targetCommit
-            });
-            
-            if (res.data.status === 'Analysis started') {
-                message.success('任务已提交至后台队列');
-                onSuccess(); // Trigger task list refresh
-                onClose();   // Close modal
-            }
-        } catch (error) {
-            message.error('启动失败: ' + error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Modal
-            title={<span className="flex items-center gap-2"><PlayCircleOutlined className="text-blue-600"/> 新建分析任务</span>}
-            open={open}
-            onCancel={onClose}
-            onOk={handleOk}
-            confirmLoading={loading}
-            okText="开始分析"
-            cancelText="取消"
-            okButtonProps={{ className: 'bg-blue-600 text-white hover:bg-blue-700 border-none' }}
-            width={600}
-        >
-            <Form form={form} layout="vertical" initialValues={{ sourceBranch: undefined, targetBranch: undefined, gitUrl: '' }} className="space-y-3">
-                
-                <Form.Item name="gitUrl" label="Git 仓库地址" rules={[{ required: true, message: '请输入 Git 地址' }]} className="mb-2">
-                    <Input prefix={<GithubOutlined className="text-slate-400"/>} placeholder="https://github.com/username/repo.git" />
-                </Form.Item>
-                <div className="flex gap-2 mb-2">
-                        <Button onClick={fetchGitBranches} loading={fetchingBranches} icon={<BranchesOutlined />} size="small">
-                        {fetchingBranches ? '获取中...' : '获取分支列表'}
-                        </Button>
-                </div>
-
-                <div className="mb-2">
-                    <Form.Item name="targetBranch" label="工作分支 (Working Branch)" rules={[{ required: true, message: '请选择工作分支' }]} className="mb-0">
-                        <Select 
-                            placeholder="选择要分析的分支"
-                            showSearch 
-                            allowClear
-                            disabled={branches.length === 0 || fetchingBranches}
-                            onChange={fetchGitCommits}
-                        >
-                            {branches.map(b => <Select.Option key={b} value={b}>{b}</Select.Option>)}
-                        </Select>
-                    </Form.Item>
-                </div>
-
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-2">
-                    <div className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-2">
-                        <ClockCircleOutlined /> 选择比对范围 (Commit Range)
-                    </div>
-                    <Form.Item name="baseCommit" label="起始提交 (Base Commit)" rules={[{ required: true, message: '请选择起始 Commit' }]} className="mb-2">
-                        <Select 
-                            placeholder={fetchingCommits ? "加载提交记录中..." : "选择起始提交"}
-                            showSearch 
-                            loading={fetchingCommits}
-                            disabled={commits.length === 0}
-                            optionLabelProp="label"
-                            size="middle"
-                        >
-                            {commits.map(c => (
-                                <Select.Option key={c.hash} value={c.hash} label={c.hash.substring(0,7)}>
-                                    <div className="flex flex-col border-b border-slate-100 pb-1 mb-1 last:border-0">
-                                        <div className="flex justify-between">
-                                            <span className="font-mono font-bold text-blue-600">{c.hash.substring(0,7)}</span>
-                                            <span className="text-xs text-slate-400">{c.date}</span>
-                                        </div>
-                                        <div className="text-xs text-slate-600 truncate" title={c.message}>{c.message}</div>
-                                        <div className="text-[10px] text-slate-400">{c.author}</div>
-                                    </div>
-                                </Select.Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-                    <div className="flex justify-center -my-3 relative z-10">
-                        <div className="bg-slate-50 p-1 rounded-full text-slate-300 text-sm"><ArrowDownOutlined /></div>
-                    </div>
-                    <Form.Item name="targetCommit" label="结束提交 (Target Commit)" rules={[{ required: true, message: '请选择结束 Commit' }]} className="mb-0">
-                        <Select 
-                            placeholder={fetchingCommits ? "加载提交记录中..." : "选择结束提交"}
-                            showSearch 
-                            loading={fetchingCommits}
-                            disabled={commits.length === 0}
-                            optionLabelProp="label"
-                            size="middle"
-                        >
-                            {commits.map(c => (
-                                <Select.Option key={c.hash} value={c.hash} label={c.hash.substring(0,7)}>
-                                    <div className="flex flex-col border-b border-slate-100 pb-1 mb-1 last:border-0">
-                                        <div className="flex justify-between">
-                                            <span className="font-mono font-bold text-green-600">{c.hash.substring(0,7)}</span>
-                                            <span className="text-xs text-slate-400">{c.date}</span>
-                                        </div>
-                                        <div className="text-xs text-slate-600 truncate" title={c.message}>{c.message}</div>
-                                        <div className="text-[10px] text-slate-400">{c.author}</div>
-                                    </div>
-                                </Select.Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-                </div>
-
-                <div className="bg-blue-50 p-2.5 rounded-lg text-xs text-blue-700 leading-relaxed">
-                    <InfoCircleOutlined className="mr-1" /> 
-                    系统将分析 <b>[工作分支]</b> 上，从 <b>[起始提交]</b> 到 <b>[结束提交]</b> 期间的代码变更。
-                </div>
-            </Form>
-        </Modal>
-    );
-};
-
-// New Component: Task List View
-const LogModal = ({ visible, onClose, logContent }) => {
-    return (
-        <Modal
-            title={<span className="flex items-center gap-2"><FileTextOutlined /> 任务执行日志</span>}
-            open={visible}
-            onCancel={onClose}
-            width={800}
-            footer={[
-                <Button key="close" onClick={onClose}>关闭</Button>
-            ]}
-        >
-            <div className="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-xs h-[500px] overflow-y-auto whitespace-pre-wrap leading-relaxed">
-                {logContent || '暂无日志信息'}
-            </div>
-        </Modal>
-    );
-};
-
-const TaskListView = ({ tasks }) => {
-    const [logModalVisible, setLogModalVisible] = useState(false);
-    const [currentLog, setCurrentLog] = useState('');
-
-    const getStatusColor = (status) => {
-        switch(status) {
-            case 'COMPLETED': return 'text-green-600 bg-green-50 border-green-100';
-            case 'FAILED': return 'text-red-600 bg-red-50 border-red-100';
-            case 'PROCESSING': return 'text-blue-600 bg-blue-50 border-blue-100';
-            default: return 'text-orange-600 bg-orange-50 border-orange-100'; // PENDING
-        }
-    };
-
-    const showLog = (log) => {
-        setCurrentLog(log);
-        setLogModalVisible(true);
-    };
-
-    return (
-        <div className="max-w-6xl mx-auto">
-            <div className="mb-6 flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                    <ClockCircleOutlined className="text-blue-500" />
-                    任务管理中心
-                </h1>
-                <div className="flex gap-2">
-                    <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold border border-slate-200">总计: {tasks.length}</span>
-                    <span className="px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold border border-green-100">成功: {tasks.filter(t=>t.status==='COMPLETED').length}</span>
-                    <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-bold border border-blue-100">进行中: {tasks.filter(t=>['PENDING','PROCESSING'].includes(t.status)).length}</span>
-                </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <Table 
-                    dataSource={tasks} 
-                    rowKey="id"
-                    pagination={{ pageSize: 10 }}
-                    size="middle"
-                    columns={[
-                        { title: 'ID', dataIndex: 'id', width: 80, render: t => <span className="text-slate-400 font-mono">#{t}</span> },
-                        { title: '项目名称', dataIndex: 'project_name', render: t => <span className="font-bold text-slate-700">{t}</span> },
-                        { title: '模式', dataIndex: 'mode', width: 100, render: t => <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs uppercase tracking-wider">{t}</span> },
-                        { title: '提交时间', dataIndex: 'created_at', width: 180, render: t => <span className="text-slate-500 text-xs font-mono">{new Date(t).toLocaleString()}</span> },
-                        { title: '状态', dataIndex: 'status', width: 120, render: t => {
-                            const colorClass = getStatusColor(t);
-                            return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${colorClass}`}>{t}</span>;
-                        }},
-                        { title: '最新日志', dataIndex: 'log_details', render: t => (
-                            <div className="text-xs text-slate-400 font-mono truncate max-w-md" title={t}>
-                                {t ? t.trim().split('\n').pop() : '-'}
-                            </div>
-                        )},
-                        {
-                            title: '操作',
-                            key: 'action',
-                            width: 100,
-                            render: (_, record) => (
-                                <Button type="link" size="small" onClick={() => showLog(record.log_details)}>查看日志</Button>
-                            )
-                        }
-                    ]}
-                />
-            </div>
-            <LogModal 
-                visible={logModalVisible} 
-                onClose={() => setLogModalVisible(false)} 
-                logContent={currentLog} 
-            />
-        </div>
-    );
-};
+import { REPORTS_URL, TASKS_URL } from './utils/api';
+import ReportDetail from './components/ReportDetail';
+import ProjectOverview from './components/ProjectOverview';
+import TaskListView from './components/TaskListView';
+import AnalysisConfigModal from './components/AnalysisConfigModal';
+import ProjectRelations from './pages/ProjectRelations';
 
 function App() {
   const [reports, setReports] = useState([]);
   const [tasks, setTasks] = useState([]); 
-  const [activeTab, setActiveTab] = useState('reports'); // 'reports' | 'tasks'
+  const [activeTab, setActiveTab] = useState('reports'); // 'reports' | 'tasks' | 'relations'
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null); 
   const [expandedProjects, setExpandedProjects] = useState([]); 
   const [loading, setLoading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false); // Used for loading state of button, though modal handles logic
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
 
   const fetchReports = React.useCallback(async () => {
@@ -826,19 +208,28 @@ function App() {
             <span>精准测试<br/><span className="text-[10px] text-slate-400 font-normal">分析报告中心</span></span>
         </h1>
         
-        {/* Main Navigation Tabs */}
-        <div className="flex p-1 bg-slate-100 rounded-lg">
+        {/* Main Navigation Tabs - 垂直排列 */}
+        <div className="flex flex-col gap-2">
             <button 
-                onClick={() => setActiveTab('reports')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${activeTab === 'reports' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => {
+                    setActiveTab('reports');
+                    setSelectedReportId(null);
+                }}
+                className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'reports' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
-                <AppstoreOutlined /> 服务分析
+                <AppstoreOutlined className="text-base" /> 服务分析
             </button>
             <button 
                 onClick={() => setActiveTab('tasks')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${activeTab === 'tasks' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'tasks' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
-                <ClockCircleOutlined /> 任务管理
+                <ClockCircleOutlined className="text-base" /> 任务管理
+            </button>
+            <button 
+                onClick={() => setActiveTab('relations')}
+                className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'relations' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+                <LinkOutlined className="text-base" /> 项目关联
             </button>
         </div>
       </div>
@@ -866,13 +257,25 @@ function App() {
       )}
 
       {/* Content based on Tab */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'reports' ? (
-            <div className="space-y-1.5">
-                {loading && reports.length === 0 ? (
-                <div className="p-4 text-center text-slate-400 text-xs">加载中...</div>
-                ) : (
-                Object.keys(projectGroups).map(projName => {
+            <>
+                {/* 项目列表标题 */}
+                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-10">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <FolderOpenOutlined className="text-xs" />
+                        <span>分析项目</span>
+                        <span className="ml-auto bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full text-[9px]">
+                            {Object.keys(projectGroups).length}
+                        </span>
+                    </div>
+                </div>
+                
+                <div className="p-3 space-y-1.5">
+                    {loading && reports.length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 text-xs">加载中...</div>
+                    ) : (
+                    Object.keys(projectGroups).map(projName => {
                     // ... existing project tree logic ...
                     const isExpanded = expandedProjects.includes(projName);
                     const isSelected = selectedProject === projName;
@@ -942,31 +345,69 @@ function App() {
                         )}
                     </div>
                     );
-                })
-                )}
-                {reports.length === 0 && !loading && <div className="text-center text-slate-400 text-xs mt-4">暂无分析报告</div>}
-            </div>
+                    })
+                    )}
+                    {reports.length === 0 && !loading && <div className="text-center text-slate-400 text-xs mt-4">暂无分析报告</div>}
+                </div>
+            </>
+        ) : activeTab === 'tasks' ? (
+            <>
+                {/* 任务统计标题 */}
+                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-10">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <ClockCircleOutlined className="text-xs" />
+                        <span>任务统计</span>
+                    </div>
+                </div>
+                
+                <div className="p-3">
+                    <div className="text-xs text-slate-500 leading-relaxed">
+                        <div className="mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <h3 className="font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                                <ClockCircleOutlined className="text-blue-600" />
+                                任务管理说明
+                            </h3>
+                            <p className="text-slate-600">此处展示所有历史分析任务的状态。您可以在右侧主界面查看详细的任务列表和执行日志。</p>
+                        </div>
+                        <div className="space-y-2.5">
+                            <div className="flex justify-between items-center p-2 bg-slate-50 rounded-lg">
+                                <span className="font-medium">总任务数</span>
+                                <span className="font-bold text-slate-700 text-base">{tasks.length}</span>
+                            </div>
+                            <div className="flex justify-between items-center p-2 bg-green-50 rounded-lg">
+                                <span className="font-medium text-green-700">已完成</span>
+                                <span className="font-bold text-green-600 text-base">{tasks.filter(t=>t.status==='COMPLETED').length}</span>
+                            </div>
+                            <div className="flex justify-between items-center p-2 bg-red-50 rounded-lg">
+                                <span className="font-medium text-red-700">失败</span>
+                                <span className="font-bold text-red-600 text-base">{tasks.filter(t=>t.status==='FAILED').length}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </>
         ) : (
-            <div className="text-xs text-slate-500 leading-relaxed p-2">
-                <div className="mb-4 bg-slate-50 p-3 rounded border border-slate-100">
-                    <h3 className="font-bold text-slate-700 mb-1">任务管理说明</h3>
-                    <p>此处展示所有历史分析任务的状态。您可以在右侧主界面查看详细的任务列表和执行日志。</p>
-                </div>
-                <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                        <span>总任务数</span>
-                        <span className="font-bold text-slate-700">{tasks.length}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-green-600">
-                        <span>已完成</span>
-                        <span className="font-bold">{tasks.filter(t=>t.status==='COMPLETED').length}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-red-500">
-                        <span>失败</span>
-                        <span className="font-bold">{tasks.filter(t=>t.status==='FAILED').length}</span>
+            <>
+                {/* 项目关联标题 */}
+                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-10">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <LinkOutlined className="text-xs" />
+                        <span>关联配置</span>
                     </div>
                 </div>
-            </div>
+                
+                <div className="p-3">
+                    <div className="text-xs text-slate-500 leading-relaxed">
+                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                            <h3 className="font-bold text-blue-700 mb-1.5 flex items-center gap-1.5">
+                                <LinkOutlined className="text-blue-600" />
+                                项目关联说明
+                            </h3>
+                            <p className="text-slate-600">在右侧主界面中配置主项目与关联项目的依赖关系，支持跨项目影响分析。</p>
+                        </div>
+                    </div>
+                </div>
+            </>
         )}
       </div>
     </div>
@@ -975,6 +416,10 @@ function App() {
   const renderMainContent = () => {
       if (activeTab === 'tasks') {
           return <TaskListView tasks={tasks} />;
+      }
+      
+      if (activeTab === 'relations') {
+          return <ProjectRelations />;
       }
       
       // Reports view
@@ -997,10 +442,18 @@ function App() {
         <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 px-5 py-3 flex justify-between items-center flex-shrink-0 z-10 sticky top-0">
           <div>
             <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-               {activeTab === 'reports' ? <SafetyCertificateOutlined className="text-blue-600" /> : <ClockCircleOutlined className="text-blue-600" />}
-               {activeTab === 'reports' ? '精准测试分析大屏' : '分析任务监控台'}
+               {activeTab === 'reports' && <SafetyCertificateOutlined className="text-blue-600" />}
+               {activeTab === 'tasks' && <ClockCircleOutlined className="text-blue-600" />}
+               {activeTab === 'relations' && <LinkOutlined className="text-blue-600" />}
+               {activeTab === 'reports' && '精准测试分析大屏'}
+               {activeTab === 'tasks' && '分析任务监控台'}
+               {activeTab === 'relations' && '项目关联管理'}
             </h2>
-            <p className="text-[10px] text-slate-500 mt-0.5">基于代码差异与链路分析的智能评估系统</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+               {activeTab === 'reports' && '基于代码差异与链路分析的智能评估系统'}
+               {activeTab === 'tasks' && '实时监控分析任务执行状态'}
+               {activeTab === 'relations' && '配置主项目与关联项目的依赖关系'}
+            </p>
           </div>
           <div className="flex items-center gap-3">
              <button 
@@ -1028,873 +481,5 @@ function App() {
     </div>
   );
 }
-
-// New Component: Project Overview
-const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
-    const [currentPage, setCurrentPage] = useState(1);
-    const pageSize = 10; // Show 10 tasks per page
-
-    // Group reports by Task ID (preferred) or time
-    const groupedReports = useMemo(() => {
-        const groups = {};
-        reports.forEach(r => {
-            let key;
-            if (r.task) {
-                // Group by Task ID ONLY to avoid splitting due to analysis time diff
-                key = `Task #${r.task}`;
-            } else {
-                // Fallback to fuzzy time grouping
-                const date = new Date(r.created_at);
-                key = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
-            }
-            
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(r);
-        });
-        
-        // Sort keys: Task IDs desc, then time strings desc
-        return Object.entries(groups).sort((a, b) => {
-            // Extract numbers if Task ID
-            const taskMatchA = a[0].match(/Task #(\d+)/);
-            const taskMatchB = b[0].match(/Task #(\d+)/);
-            
-            if (taskMatchA && taskMatchB) {
-                return parseInt(taskMatchB[1]) - parseInt(taskMatchA[1]);
-            }
-            return b[0].localeCompare(a[0]);
-        });
-    }, [reports]);
-
-    // Calculate pagination
-    const totalTasks = groupedReports.length;
-    const currentTasks = groupedReports.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-    return (
-        <div className="max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                    <FolderOpenOutlined className="text-blue-500" />
-                    {projectName}
-                </h1>
-                <p className="text-slate-500 mt-2">该项目共检测到 {reports.length} 个文件变更记录，共 {totalTasks} 个分析批次。</p>
-            </div>
-            
-            <div className="space-y-10 pb-10">
-                {currentTasks.map(([batchKey, groupReports], idx) => {
-                    // Global index for display
-                    const globalIdx = (currentPage - 1) * pageSize + idx;
-                    
-                    // Calculate representative time for the batch (e.g., latest file time)
-                    const latestTime = new Date(Math.max(...groupReports.map(r => new Date(r.created_at))));
-                    const timeDisplay = latestTime.toLocaleString();
-
-                    // Get task info from the first report
-                    const firstReport = groupReports[0] || {};
-                    const branchName = firstReport.source_branch;
-                    const commitRange = firstReport.target_branch;
-
-                    return (
-                    <div key={batchKey} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-                        <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold">
-                                    {globalIdx + 1}
-                                </div>
-                                <div>
-                                    <span className="font-bold text-slate-700 text-sm flex items-center flex-wrap gap-2">
-                                        <span>分析批次: {batchKey}</span>
-                                        {(branchName || commitRange) && (
-                                            <span className="inline-flex items-center gap-2 px-2 py-0.5 bg-indigo-50 border border-indigo-100 rounded text-xs text-indigo-600 font-mono font-normal">
-                                                {branchName && (
-                                                    <span className="flex items-center gap-1">
-                                                        <BranchesOutlined /> {branchName}
-                                                    </span>
-                                                )}
-                                                {branchName && commitRange && <span className="text-indigo-700">/</span>}
-                                                {commitRange && (() => {
-                                                    // Parse commit range: "hash1 -> hash2"
-                                                    const parts = commitRange.split(' -> ');
-                                                    const baseCommit = parts[0] ? parts[0].trim() : '';
-                                                    const targetCommit = parts[1] ? parts[1].trim() : '';
-                                                    
-                                                    const tooltipText = baseCommit && targetCommit 
-                                                        ? `对比的是 ${baseCommit}提交记录 到 ${targetCommit}提交记录 的变更`
-                                                        : "变更对比范围：基准提交 -> 目标提交";
-
-                                                    return (
-                                                        <span className="flex items-center gap-1">
-                                                            <DeploymentUnitOutlined /> 
-                                                            {commitRange}
-                                                            <Tooltip 
-                                                                title={<span className="whitespace-nowrap text-xs">{tooltipText}</span>}
-                                                                placement="top"
-                                                                overlayInnerStyle={{ width: 'max-content', maxWidth: 'none' }}
-                                                            >
-                                                                <InfoCircleOutlined className="text-indigo-700 cursor-help hover:text-indigo-900 ml-1" />
-                                                            </Tooltip>
-                                                        </span>
-                                                    );
-                                                })()}
-                                            </span>
-                                        )}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400">最新生成时间: {timeDisplay}</span>
-                                </div>
-                            </div>
-                            <span className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-                                {groupReports.length} 个变更文件
-                            </span>
-                        </div>
-                        
-                        <div className="p-0">
-                        <Table 
-                            dataSource={groupReports} 
-                            rowKey="id"
-                            pagination={{ pageSize: 10 }}
-                            size="middle"
-                            className="no-border-table"
-                            columns={[
-                                {
-                                    title: 'ID',
-                                    dataIndex: 'id',
-                                    width: 80,
-                                    render: (text) => <span className="font-mono text-slate-400">#{text}</span>
-                                },
-                                {
-                                    title: '风险等级',
-                                    dataIndex: 'risk_level',
-                                    width: 100,
-                                    render: (level) => {
-                                        const colors = { 
-                                            'CRITICAL': 'bg-red-500 text-white border-red-600', 
-                                            'HIGH': 'bg-orange-500 text-white border-orange-600', 
-                                            'MEDIUM': 'bg-yellow-500 text-white border-yellow-600', 
-                                            'LOW': 'bg-green-500 text-white border-green-600',
-                                            '严重': 'bg-red-500 text-white border-red-600', 
-                                            '高': 'bg-orange-500 text-white border-orange-600', 
-                                            '中': 'bg-yellow-500 text-white border-yellow-600', 
-                                            '低': 'bg-green-500 text-white border-green-600'
-                                        };
-                                        const colorClass = colors[level] || 'bg-slate-500 text-white border-slate-600';
-                                        return (
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${colorClass} shadow-sm`}>
-                                                {level}
-                                            </span>
-                                        );
-                                    }
-                                },
-                                {
-                                    title: '变更文件',
-                                    dataIndex: 'file_name',
-                                    width: 250,
-                                    render: (text, record) => (
-                                        <a onClick={() => onSelectReport(record.id)} className="font-medium text-blue-600 hover:underline flex items-center gap-2">
-                                            <FileTextOutlined /> {text}
-                                        </a>
-                                    )
-                                },
-                                {
-                                    title: '变更意图',
-                                    dataIndex: 'change_intent',
-                                    render: (text) => (
-                                        <div className="text-xs text-slate-600 line-clamp-2 max-w-xl" title={text}>
-                                            {text || <span className="text-slate-300 italic">暂无描述</span>}
-                                        </div>
-                                    )
-                                },
-                                {
-                                    title: '生成时间',
-                                    dataIndex: 'created_at',
-                                    width: 150,
-                                    render: (text) => (
-                                        <div className="text-xs text-slate-400 flex items-center gap-1">
-                                            <ClockCircleOutlined /> {new Date(text).toLocaleTimeString()}
-                                        </div>
-                                    )
-                                },
-                                {
-                                    title: '操作',
-                                    key: 'action',
-                                    width: 100,
-                                    render: (_, record) => (
-                                        <Button type="link" size="small" onClick={() => onSelectReport(record.id)}>查看详情</Button>
-                                    )
-                                }
-                            ]}
-                        />
-                    </div>
-                </div>
-                );
-            })}
-            </div>
-            
-            {/* Pagination for Tasks */}
-            {totalTasks > pageSize && (
-                <div className="flex justify-center mt-8 pb-8">
-                    <Pagination 
-                        current={currentPage} 
-                        total={totalTasks} 
-                        pageSize={pageSize} 
-                        onChange={(page) => {
-                            setCurrentPage(page);
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }} 
-                        showTotal={(total) => `共 ${total} 个分析批次`}
-                    />
-                </div>
-            )}
-        </div>
-    );
-};
-
-const ReportDetail = ({ report, onBack }) => {
-  const data = report.report_json;
-  const [diffModalVisible, setDiffModalVisible] = useState(false);
-  const [flowchartVisible, setFlowchartVisible] = useState(false);
-  const [currentFlowData, setCurrentFlowData] = useState(null);
-
-  // Helper functions
-
-
-  const renderField = (value) => {
-    if (!value) return <span className="text-slate-400">N/A</span>;
-    if (typeof value === 'string') {
-        // Try to parse JSON string if it looks like an array or object
-        if ((value.startsWith('[') && value.endsWith(']')) || (value.startsWith('{') && value.endsWith('}'))) {
-            try {
-                const parsed = JSON.parse(value);
-                return renderField(parsed);
-            } catch (e) {
-                // Ignore parse error, treat as string
-            }
-        }
-
-        // Auto-format numbered lists (e.g., "1. xxx; 2. xxx")
-        if (value.match(/\d+\.\s/)) {
-            const items = value.split(/(?=\d+\.\s)/).filter(item => item.trim());
-            if (items.length > 1) {
-                return (
-                    <ul className="list-none space-y-3">
-                        {items.map((item, idx) => {
-                            // Check for sub-items (e.g. "(1) sub-item")
-                            const cleanItem = item.replace(/^\d+\.\s*/, '').replace(/;$/, '').trim();
-                            let mainContent = cleanItem;
-                            let subItems = [];
-
-                            // Support both English (1) and Chinese （1） parentheses
-                            // Use capturing group to split but keep the delimiters
-                            const splitRegex = /([\(（]\d+[\)）])/;
-                            if (cleanItem.match(splitRegex)) {
-                                const parts = cleanItem.split(splitRegex);
-                                // parts will look like: ["Main text", "(1)", "Sub text 1", "(2)", "Sub text 2"]
-                                if (parts.length > 1) {
-                                    mainContent = parts[0].trim();
-                                    
-                                    // Reconstruct sub-items
-                                    subItems = [];
-                                    for (let i = 1; i < parts.length; i += 2) {
-                                        // parts[i] is the marker e.g. "(1)"
-                                        // parts[i+1] is the content
-                                        if (i + 1 < parts.length) {
-                                            const content = parts[i+1].trim();
-                                            if (content) {
-                                                subItems.push(content);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            return (
-                                <li key={idx} className="flex gap-2 items-start">
-                                    <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
-                                        {idx + 1}
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="leading-6 font-medium text-slate-700">{mainContent}</div>
-                                        {subItems.length > 0 && (
-                                            <ul className="mt-1.5 space-y-1 ml-1">
-                                                {subItems.map((sub, sIdx) => (
-                                                    <li key={sIdx} className="text-xs text-slate-500 flex gap-2 items-start bg-slate-50 p-1.5 rounded border border-slate-100/50">
-                                                        <span className="font-mono text-green-600 font-bold opacity-70">({sIdx + 1})</span>
-                                                        <span>{sub}</span>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                );
-            }
-        }
-        return value;
-    }
-    if (Array.isArray(value)) {
-        return (
-            <ul className="list-none space-y-3">
-                {value.map((item, idx) => (
-                    <li key={idx} className="flex gap-2 items-start">
-                        <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
-                            {idx + 1}
-                        </div>
-                        <div className="flex-1 leading-6 font-medium text-slate-700">
-                             {typeof item === 'string' ? item : renderField(item)}
-                        </div>
-                    </li>
-                ))}
-            </ul>
-        );
-    }
-
-    if (typeof value === 'object') {
-        // Handle structured item with summary and details
-        if (value && value.summary && (value.details === undefined || Array.isArray(value.details))) {
-            return (
-                <div className="w-full">
-                     <div className="font-bold text-slate-800 text-sm leading-relaxed mb-2">{value.summary}</div>
-                     {value.details && value.details.length > 0 && (
-                        <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-md border border-slate-100">
-                            {value.details.map((detail, dIdx) => (
-                                <div key={dIdx} className="text-xs text-slate-600 flex gap-2 items-start">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0 opacity-60"></span>
-                                    <span className="leading-relaxed font-medium block w-full">{renderDetailItem(detail)}</span>
-                                </div>
-                            ))}
-                        </div>
-                     )}
-                </div>
-            );
-        }
-
-        // Handle Cross Service Impact (Object with service names as keys)
-        // Detect if values look like { file_path, impact_description } OR arrays of such objects
-        const keys = Object.keys(value);
-        const firstValue = value[keys[0]];
-        const isCrossService = keys.length > 0 && (
-            (firstValue && typeof firstValue === 'object' && (firstValue.impact_description || firstValue.file_path)) || 
-            (Array.isArray(firstValue) && firstValue.length > 0 && (firstValue[0].impact_description || firstValue[0].file_path))
-        );
-
-        if (isCrossService) {
-            // Flatten the structure for rendering: [ {service, ...info}, ... ]
-            let flatItems = [];
-            keys.forEach(serviceName => {
-                const itemOrArray = value[serviceName];
-                if (Array.isArray(itemOrArray)) {
-                    itemOrArray.forEach(item => flatItems.push({ serviceName, ...item }));
-                } else {
-                    flatItems.push({ serviceName, ...itemOrArray });
-                }
-            });
-
-            return (
-                <ul className="list-none space-y-3">
-                    {flatItems.map((info, idx) => (
-                        <li key={idx} className="flex gap-2 items-start">
-                            <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
-                                {idx + 1}
-                            </div>
-                            <div className="flex-1">
-                                    <div className="font-bold text-slate-700 text-xs mb-1 bg-slate-100 inline-block px-1.5 py-0.5 rounded border border-slate-200">
-                                    {info.serviceName}
-                                    </div>
-                                    <div className="text-slate-600 text-xs leading-relaxed">
-                                    {info.impact_description || '暂无详细描述'}
-                                    </div>
-                                    {info.file_path && (
-                                        <div className="mt-1 font-mono text-[10px] text-slate-400 break-all bg-slate-50 p-1 rounded border border-slate-100/50">
-                                        {info.file_path}:{info.line_number}
-                                        </div>
-                                    )}
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-            );
-        }
-
-        if (value.direct_impact || value.potential_impact) {
-            return (
-                <div className="text-xs space-y-1.5 text-slate-600">
-                    {value.direct_impact && <p><b className="text-slate-700">直接影响:</b> {value.direct_impact}</p>}
-                    {value.potential_impact && <p><b className="text-slate-700">潜在影响:</b> {value.potential_impact}</p>}
-                    {value.regression_test_scope && <p><b className="text-slate-700">回归范围:</b> {value.regression_test_scope}</p>}
-                    {value.regression_testing && <p><b className="text-slate-700">回归测试:</b> {value.regression_testing}</p>}
-                </div>
-            );
-        }
-        
-        // Handle structured Functional Impact (JSON with specific keys)
-        if (value.risks || value.data_flow || value.api_impact || value.entry_points || value.business_scenario) {
-             const sections = [
-                { title: '业务场景', content: value.business_scenario, color: 'blue' },
-                { title: '数据流向', content: value.data_flow, color: 'indigo' },
-                { title: 'API 影响', content: value.api_impact, color: 'purple' },
-                { title: '潜在风险', content: value.risks, color: 'red' },
-                { title: '关联入口', content: value.entry_points, color: 'orange' },
-             ].filter(s => s.content && (Array.isArray(s.content) ? s.content.length > 0 : true));
-             
-             return (
-                <div className="space-y-4">
-                    {sections.map((section, idx) => (
-                        <div key={idx} className="text-xs">
-                            <h4 className={`font-bold mb-1.5 flex items-center gap-1.5 text-${section.color}-700`}>
-                                <span className={`w-1.5 h-1.5 rounded-full bg-${section.color}-500`}></span>
-                                {section.title}
-                            </h4>
-                            {Array.isArray(section.content) ? (
-                                <ul className="space-y-2 pl-1">
-                                    {section.content.map((item, i) => {
-                                        if (typeof item === 'object' && item !== null && item.summary) {
-                                            return (
-                                                <li key={i} className="flex gap-2 items-start text-slate-600 bg-slate-50/50 p-2 rounded-lg border border-slate-100 shadow-sm">
-                                                     <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
-                                                        {i + 1}
-                                                     </div>
-                                                     <div className="flex-1">
-                                                        <div className="font-medium text-slate-800 leading-relaxed">{item.summary}</div>
-                                                        {item.details && Array.isArray(item.details) && item.details.length > 0 && (
-                                                            <div className="mt-2 space-y-1.5">
-                                                                {item.details.map((detail, dIdx) => (
-                                                                    <div key={dIdx} className="text-xs text-slate-500 flex gap-2 items-start bg-white p-1.5 rounded border border-slate-100">
-                                                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 flex-shrink-0"></span>
-                                                                        <span className="leading-relaxed block w-full">{renderDetailItem(detail)}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                     </div>
-                                                </li>
-                                            );
-                                        }
-                                        return (
-                                            <li key={i} className="flex gap-2 items-start text-slate-600 bg-slate-50/50 p-1 rounded-sm">
-                                                <span className="font-mono text-[10px] text-slate-400 select-none mt-0.5">{i+1}.</span>
-                                                <span>{typeof item === 'string' ? renderDetailItem(item) : JSON.stringify(item)}</span>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                            ) : (
-                                <div className="text-slate-600 bg-slate-50/50 p-1.5 rounded-sm leading-relaxed border-l-2 border-slate-100 pl-2">
-                                    {renderDetailItem(section.content)}
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-             );
-        }
-
-        return <pre className="whitespace-pre-wrap text-xs bg-slate-50 p-3 rounded-lg border border-slate-100 text-slate-600 font-mono">{JSON.stringify(value, null, 2)}</pre>;
-    }
-    return String(value);
-  };
-
-  const renderDetailItem = (text) => {
-      if (typeof text !== 'string') return text;
-      
-      // 1. Handle Arrow Flows ("->" or "→")
-      if (text.includes('→') || text.includes('->')) {
-          const arrowParts = text.split(/→|->/).map(p => p.trim()).filter(p => p);
-          if (arrowParts.length > 1) {
-              return (
-                  <div className="flex flex-col gap-2 w-full mt-1">
-                      {arrowParts.map((part, idx) => (
-                          <div key={idx} className="flex flex-col items-start relative">
-                              {/* Connector Line (except for last item) */}
-                              {idx < arrowParts.length - 1 && (
-                                  <div className="absolute left-2.5 top-6 bottom-0 w-0.5 bg-slate-200 h-full -mb-2 z-0"></div>
-                              )}
-                              
-                              <div className="flex gap-2 items-start z-10 relative">
-                                  {/* Step Number/Icon */}
-                                  <div className="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 select-none shadow-sm">
-                                      {idx + 1}
-                                  </div>
-                                  
-                                  {/* Content */}
-                                  <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1 text-slate-700 leading-relaxed text-xs">
-                                      {part}
-                                  </div>
-                              </div>
-                              
-                              {/* Down Arrow Icon (visual only, between items) */}
-                              {idx < arrowParts.length - 1 && (
-                                  <div className="ml-2.5 my-0.5 text-slate-300 text-[10px]">
-                                      <ArrowDownOutlined />
-                                  </div>
-                              )}
-                          </div>
-                      ))}
-                  </div>
-              );
-          }
-      }
-
-      // 2. Handle Numbered Lists ("1. ", "2. ")
-      // Split by "1. ", "2. " patterns occurring at start or after punctuation/space
-      // Using lookahead to keep the number with the item
-      const parts = text.split(/(?:^|[\s。；;])(?=\d+[.、．]\s*)/).filter(p => p.trim());
-      
-      if (parts.length > 1) {
-          return (
-              <div className="flex flex-col gap-1.5 w-full mt-0.5">
-                  {parts.map((part, idx) => {
-                      const cleanPart = part.trim();
-                      // Highlight the number prefix
-                      const match = cleanPart.match(/^(\d+[.、．]\s*)(.*)/s);
-                      if (match) {
-                          return (
-                              <div key={idx} className="flex gap-1.5 items-start">
-                                  <span className="font-mono text-slate-400 font-bold shrink-0 mt-0.5 select-none text-[10px] bg-slate-100 px-1 rounded h-4 flex items-center">{match[1].trim()}</span>
-                                  <span className="leading-relaxed">{match[2]}</span>
-                              </div>
-                          );
-                      }
-                      return <div key={idx}>{cleanPart}</div>;
-                  })}
-              </div>
-          );
-      }
-      return text;
-  };
-
-  const cleanDiff = (diffText) => {
-    if (!diffText) return '';
-    return diffText.split('\n').filter(line => !line.startsWith('diff --git') && !line.startsWith('index ') && !line.startsWith('new file mode') && !line.startsWith('deleted file mode')).join('\n');
-  };
-
-  const renderRiskBadge = (level) => {
-    const colors = { 
-        'CRITICAL': 'bg-red-500 text-white border-red-600', 
-        'HIGH': 'bg-orange-500 text-white border-orange-600', 
-        'MEDIUM': 'bg-yellow-500 text-white border-yellow-600', 
-        'LOW': 'bg-green-500 text-white border-green-600',
-        '严重': 'bg-red-500 text-white border-red-600',
-        '高': 'bg-orange-500 text-white border-orange-600',
-        '中': 'bg-yellow-500 text-white border-yellow-600',
-        '低': 'bg-green-500 text-white border-green-600'
-    };
-    const colorClass = colors[level] || 'bg-slate-500 text-white border-slate-600';
-    return <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${colorClass} shadow-sm`}>{level}</span>;
-  };
-
-  return (
-    <div className="space-y-3 max-w-6xl mx-auto pb-6 font-sans">
-      
-      {/* Header with Back Button */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 transition-all hover:shadow-md">
-         {/* Back Button Row */}
-         <div className="mb-4">
-            <Button 
-                type="text" 
-                icon={<ArrowLeftOutlined />} 
-                onClick={onBack}
-                className="text-slate-500 hover:text-blue-600 hover:bg-slate-50 px-2 pl-0"
-            >
-                返回列表
-            </Button>
-         </div>
-
-         <div className="flex justify-between items-start">
-             <div className="flex gap-4">
-                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center text-blue-600 text-lg flex-shrink-0 border border-blue-100 shadow-sm">
-                     <FileTextOutlined />
-                 </div>
-                 <div>
-                     {/* Project & Branch Context */}
-                     <div className="flex items-center gap-2 text-[10px] text-gray-400 mb-1 font-medium tracking-wide">
-                        <span className="flex items-center gap-1 bg-gray-50 px-1.5 py-0.5 rounded text-gray-500 border border-gray-100">
-                            <FolderOpenOutlined /> {report.project_name || 'Unknown Project'}
-                        </span>
-                        <span className="text-gray-300">/</span>
-                        <span className="flex items-center gap-1 bg-blue-50/50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100/50" title="工作分支">
-                            <BranchesOutlined /> {report.source_branch || 'master'}
-                        </span>
-                        {report.target_branch && (
-                            <>
-                                <span className="text-gray-300">/</span>
-                                <span className="flex items-center gap-1 bg-purple-50/50 text-purple-600 px-1.5 py-0.5 rounded border border-purple-100/50" title="比对范围">
-                                    <SwapOutlined /> {report.target_branch}
-                                </span>
-                            </>
-                        )}
-                     </div>
-                     
-                     <div className="flex items-center gap-3 mb-0.5">
-                         <h1 className="text-lg font-bold text-gray-800 tracking-tight">{report.file_name}</h1>
-                         {renderRiskBadge(report.risk_level)}
-                     </div>
-                     <div className="flex items-center gap-4 text-[10px] text-gray-400 font-medium">
-                         <span className="flex items-center gap-1.5"><ClockCircleOutlined /> {new Date(report.created_at).toLocaleString()}</span>
-                         <span className="flex items-center gap-1.5"><CodeOutlined /> ID: {report.id}</span>
-                     </div>
-                 </div>
-             </div>
-             <button 
-                 onClick={() => setDiffModalVisible(true)}
-                 className="text-gray-500 hover:text-blue-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-xs font-semibold border border-transparent hover:border-gray-200"
-             >
-                 <ExpandOutlined /> 查看 Diff
-             </button>
-         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3">
-          {/* Change Details */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-50">
-                  <InfoCircleOutlined className="text-blue-500 text-base" />
-                  <h3 className="font-bold text-gray-800 text-sm">变更详情分析</h3>
-              </div>
-              
-              <div className="space-y-3">
-                  {/* Change Intent */}
-                  <div>
-                      <div className="flex items-center gap-2 mb-3 text-sm font-bold text-slate-700">
-                          <FileTextOutlined className="text-blue-500"/> 变更详情
-                      </div>
-                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700 leading-relaxed">
-                          {renderField(report.change_intent || '暂无分析结果')}
-                      </div>
-                  </div>
-
-                  {/* Impact Grid */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      {/* Cross Service Impact */}
-                      <div className="bg-orange-50/20 p-3 rounded-lg border border-orange-100/60 hover:border-orange-200 transition-colors">
-                          <span className="flex items-center gap-2 text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1.5">
-                              <ApiOutlined /> 跨服务影响
-                          </span>
-                          <div className="text-xs text-gray-700 font-medium leading-relaxed min-h-[40px]">
-                              {renderField(data.cross_service_impact)}
-                          </div>
-                      </div>
-
-                      {/* Functional Impact */}
-                      <div className="bg-green-50/20 p-3 rounded-lg border border-green-100/60 hover:border-green-200 transition-colors">
-                          <span className="flex items-center gap-2 text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1.5">
-                              <AppstoreOutlined /> 功能影响
-                          </span>
-                          <div className="text-xs text-gray-700 font-medium leading-relaxed min-h-[40px]">
-                              {renderField(data.functional_impact)}
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      </div>
-
-      {/* Affected APIs Section */}
-      {data.affected_apis && data.affected_apis.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-5">
-              <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4">
-                  <ApiOutlined className="text-purple-500" /> 影响接口 (Affected APIs)
-              </h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {data.affected_apis.map((api, idx) => (
-                      <div key={idx} className="bg-purple-50/30 border border-purple-100 rounded-lg p-3 flex flex-col gap-2 hover:bg-purple-50 transition-colors">
-                          <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                                  api.method === 'GET' ? 'bg-blue-100 text-blue-700' :
-                                  api.method === 'POST' ? 'bg-green-100 text-green-700' :
-                                  api.method === 'DELETE' ? 'bg-red-100 text-red-700' :
-                                  'bg-orange-100 text-orange-700'
-                              }`}>
-                                  {api.method}
-                              </span>
-                          </div>
-                          <code className="text-xs font-mono text-slate-700 break-all bg-white px-2 py-1 rounded border border-slate-200">
-                              {api.url}
-                          </code>
-                          <div className="text-xs text-slate-500 mt-1 leading-relaxed">
-                              {api.description}
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          </div>
-      )}
-
-      {/* Diff Preview */}
-      {report.diff_content && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-             <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                 <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                     <CodeOutlined className="text-indigo-500" /> 代码变更预览
-                 </h3>
-             </div>
-             <div className="relative group">
-                <div style={{ maxHeight: '250px', overflow: 'hidden' }} className="opacity-80">
-                    <SyntaxHighlighter language="diff" style={vs} showLineNumbers={true} customStyle={{ margin: 0, fontSize: '12px', background: 'transparent' }}>
-                        {cleanDiff(report.diff_content).slice(0, 1000) + '...'}
-                    </SyntaxHighlighter>
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-white via-white/50 to-transparent flex items-end justify-center pb-6">
-                    <button 
-                        onClick={() => setDiffModalVisible(true)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-full shadow-lg hover:shadow-indigo-500/30 transition-all transform hover:-translate-y-1 font-medium flex items-center gap-2"
-                    >
-                        <ExpandOutlined /> 进入沉浸式 Diff 视图
-                    </button>
-                </div>
-             </div>
-             <DiffModal visible={diffModalVisible} onClose={() => setDiffModalVisible(false)} diffContent={report.diff_content} fileName={report.file_name} />
-        </div>
-      )}
-
-      {/* Tables Section */}
-      <div className="grid gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
-                  <BugOutlined className="text-cyan-500" />
-                  <h3 className="font-bold text-slate-700">下游依赖分析</h3>
-              </div>
-              <Table 
-                 dataSource={data.downstream_dependency} 
-                 rowKey={(r) => (r.file_path||'')+(r.line_number||'')} 
-                 pagination={false} 
-                 columns={[
-                    { title: '服务名', dataIndex: 'service_name', width: 140, render: t => <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-xs font-bold whitespace-nowrap">{t}</span> },
-                    { title: '文件路径', dataIndex: 'file_path', width: 300, render: t => (
-                        <div className="font-mono text-xs text-slate-600 break-all whitespace-normal">
-                            {t}
-                        </div>
-                    )},
-                    { title: '行号', dataIndex: 'line_number', width: 80, align: 'center', render: t => <span className="font-mono text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">L{t}</span> },
-                    { 
-                        title: '影响描述', 
-                        dataIndex: 'impact_description', 
-                        width: 400, // Fixed width
-                        render: t => <div className="text-xs text-slate-700 leading-relaxed whitespace-normal break-words" style={{ wordBreak: 'break-word' }}>{t}</div> 
-                    },
-                    { 
-                        title: '依赖流程图', 
-                        key: 'action',
-                        width: 120,
-                        align: 'center',
-                        render: (_, record) => (
-                            <Button 
-                                type="link" 
-                                size="small" 
-                                icon={<BranchesOutlined />} 
-                                onClick={() => {
-                                    setCurrentFlowData(record);
-                                    setFlowchartVisible(true);
-                                }}
-                            >
-                                查看链路
-                            </Button>
-                        )
-                    }
-                 ]}
-                 size="middle"
-                 scroll={{ x: 'max-content' }}
-              />
-              {(!data.downstream_dependency || data.downstream_dependency.length === 0) && <div className="p-8 text-center text-slate-400">未检测到下游依赖</div>}
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 border-t-4 border-t-indigo-500">
-                  <CheckCircleOutlined className="text-indigo-500" />
-                  <h3 className="font-bold text-slate-700">测试策略矩阵</h3>
-              </div>
-              <Table 
-                 dataSource={data.test_strategy} 
-                 rowKey="title" 
-                 pagination={false} 
-                 size="small"
-                 bordered={false}
-                 className="compact-table"
-                 // Remove global rowClassName to allow per-column control
-                 columns={[
-                    { 
-                        title: '优先级', 
-                        dataIndex: 'priority', 
-                        width: 70,
-                        // Ensure vertical center alignment
-                        onCell: () => ({ style: { verticalAlign: 'middle', textAlign: 'center' } }),
-                        render: t => {
-                            const colors = { 'P0': 'text-red-600 bg-red-50 border-red-100', 'P1': 'text-orange-600 bg-orange-50 border-orange-100', 'P2': 'text-blue-600 bg-blue-50 border-blue-100' };
-                            return <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold ${colors[t] || 'text-slate-600 bg-slate-50'}`}>{t}</span>;
-                        }
-                    },
-                    { 
-                        title: '场景标题', 
-                        dataIndex: 'title', 
-                        width: 180, 
-                        // Ensure vertical center alignment
-                        onCell: () => ({ style: { verticalAlign: 'middle' } }),
-                        render: t => <span className="font-bold text-slate-700 text-xs leading-tight block">{t}</span> 
-                    },
-                    { 
-                        title: '测试步骤', 
-                        dataIndex: 'steps', 
-                        width: 350, 
-                        render: (text) => {
-                            if (!text) return '-';
-                            // Custom compact list render for steps
-                            const items = typeof text === 'string' ? text.split(/(?:^|[\s。；;])(?=\d+[.、．]\s*)/).filter(p => p.trim()) : [];
-                            
-                            if (items.length > 1) {
-                                return (
-                                    <div className="flex flex-col gap-1 w-full text-[11px] whitespace-normal">
-                                        {items.map((part, idx) => {
-                                            const match = part.trim().match(/^(\d+[.、．]\s*)(.*)/s);
-                                            if (match) {
-                                                return (
-                                                    <div key={idx} className="flex gap-1.5 items-start">
-                                                        <span className="font-mono text-slate-400 font-bold shrink-0 select-none text-[9px] bg-slate-50 px-1 rounded h-3.5 flex items-center justify-center leading-none mt-0.5 min-w-[16px] border border-slate-100">{match[1].trim().replace(/[.、．]/,'')}</span>
-                                                        <span className="leading-snug text-slate-600">{match[2]}</span>
-                                                    </div>
-                                                );
-                                            }
-                                            return <div key={idx} className="leading-snug text-slate-600">{part}</div>;
-                                        })}
-                                    </div>
-                                );
-                            }
-                            return <div className="text-[11px] text-slate-600 whitespace-pre-wrap leading-snug">{renderField(text)}</div>;
-                        }
-                    },
-                    { 
-                        title: 'Payload 示例', 
-                        dataIndex: 'payload', 
-                        width: 220,
-                        render: t => (
-                            <div className="bg-slate-50 rounded border border-slate-200 p-1.5 font-mono text-[10px] text-slate-600 max-h-[300px] overflow-y-auto custom-scrollbar leading-tight break-all">
-                                {typeof t === 'object' ? JSON.stringify(t, null, 2) : t}
-                            </div>
-                        )
-                    },
-                    { 
-                        title: '验证点', 
-                        dataIndex: 'validation', 
-                        width: 300, 
-                        render: t => <div className="text-[11px] text-slate-600 leading-snug whitespace-normal">{renderField(t)}</div> 
-                    }
-                 ]}
-                 scroll={{ x: 'max-content' }}
-              />
-          </div>
-      </div>
-      <FlowchartModal 
-        visible={flowchartVisible} 
-        onClose={() => setFlowchartVisible(false)} 
-        data={currentFlowData}
-        sourceFile={report.file_name}
-        providerService={(() => {
-            if (!report.diff_content) return null;
-            const match = report.diff_content.match(/diff --git a\/([^/]+)\//);
-            return match ? match[1] : null;
-        })()}
-      />
-    </div>
-  );
-};
 
 export default App;

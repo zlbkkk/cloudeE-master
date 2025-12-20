@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\analysis\static_parser.py
+# hypothesis_version: 6.148.7
+
+['"', '(', ', ', '.', '...', '.RequestMapping', '.git', '.java', '@', 'FQN', 'RequestMapping', 'code_diff_project', 'explicit import', 'file_name', 'import ', 'line', 'package\\s+([\\w.]+);', 'path', 'private ', 'protected ', 'public ', 'r', 'same package', 'service', 'snippet', 'star import', 'target', 'type', 'utf-8', 'value']

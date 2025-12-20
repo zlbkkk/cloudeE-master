@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\runner.py
+# hypothesis_version: 6.148.7
+
+['\n[Warning] 失败的项目:', '(?<!^)(\\d+\\.)', '-', '..', '...', 'API 开关未打开', 'FAILED', 'HEAD', 'HEAD^', 'N/A', 'Payload示例', 'UNKNOWN', 'Unknown', '[Info] 初始化单项目索引', '\\n\\1', 'bold', 'bold green', 'bold magenta', 'bold yellow', 'change_intent', 'code_review_warning', 'cross_service_impact', 'cyan', 'dim', 'error', 'functional_impact', 'green', 'left', 'master', 'name', 'path', 'payload', 'priority', 'red', 'related_project_name', 'right', 'risk_level', 'success', 'test_strategy', 'title', 'validation', 'workspace', 'yellow', '下游依赖:', '优先级', '场景标题', '影响功能:', '意图推测:', '无法分析', '跨服务影响:', '风险等级:', '验证点']

@@ -24,6 +24,13 @@ public class PointManager {
 
     @Resource
     private PointClient pointClient;
+    
+    /**
+     * Overloaded method for backward compatibility
+     */
+    public boolean distributePointsBatch(List<Long> userIds, Integer points, String source) {
+        return distributePointsBatch(userIds, points, source, false);
+    }
 
     /**
      * 批量发放积分（带重试和日志）
@@ -44,7 +51,8 @@ public class PointManager {
                     "ADD",
                     source,
                     !forceSync, // 如果强制同步，则异步设为false
-                    extraInfo
+                    extraInfo,
+                    "TRACE-" + System.currentTimeMillis() // Added missing traceId
             );
             
             if (result.isSuccess()) {
@@ -75,6 +83,7 @@ public class PointManager {
         dto.setAmount(amount);
         dto.setReason("USER_TRANSFER");
         dto.setAsync(true);
+        dto.setRiskLevel("LOW");
         
         try {
             BaseResult<Boolean> result = pointClient.transferPoints(dto);

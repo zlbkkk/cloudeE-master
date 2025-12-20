@@ -29,9 +29,16 @@ public class ApplePayProvider {
     @ApiOperation(value = "apple充值", notes = "测试接口")
     @HystrixCommand(fallbackMethod = "rechargeFallBack", commandProperties = {
             @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "5000")})
-    @PostMapping(value = "apple/recharge")
+    @PostMapping(value = "apple/recharge_v2")
     public BaseResult<Boolean> applePayRecharge(@RequestParam("userId") Long userId, @RequestParam("amount") Double amount) throws Exception {
         log.info("apple recharge {}", amount);
+        
+        // 增加金额限制逻辑，影响跨服务调用结果
+        if (amount > 10000) {
+             log.warn("Apple pay recharge amount limit exceeded for user: {}", userId);
+             return new BaseResult<>(false, "充值金额超过限额");
+        }
+        
         redisService.set("apple_recharge_" + userId, amount.toString(), 3600);
         return new BaseResult<>(true);
     }

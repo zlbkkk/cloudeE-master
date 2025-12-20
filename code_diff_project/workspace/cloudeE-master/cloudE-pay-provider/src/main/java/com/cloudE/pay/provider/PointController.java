@@ -4,50 +4,75 @@ import com.cloudE.dto.BaseResult;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.util.Arrays;
-import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 public class PointController {
 
     private static final Logger log = LoggerFactory.getLogger(PointController.class);
-    private static final List<Long> BLACKLIST_USERS = Arrays.asList(9999L, 8888L);
+    // 模拟用户积分缓存锁，防止并发刷分
+    private static final ConcurrentHashMap<Long, Long> USER_LOCK_MAP = new ConcurrentHashMap<>();
 
     /**
-     * 新增积分接口
+     * 核心积分增加接口 (Complex Logic V2)
      */
     @PostMapping("/point/add")
-    public BaseResult<Boolean> addPoint(@RequestParam("userId") Long userId, 
-                                      @RequestParam("points") Integer points, 
-                                      @RequestParam("source") String source,
-                                      @RequestParam(value = "expireSeconds", required = false) Long expireSeconds,
-                                      @RequestParam("requestId") String requestId) {
-        log.info("Adding points for user: {}, points: {}", userId, points);
-        
-        // [Logic Change 3] 黑名单用户直接拒绝
-        if (BLACKLIST_USERS.contains(userId)) {
-            log.warn("Security Alert: Blacklisted user attempt! userId={}", userId);
-            return new BaseResult<>(false, "User is blacklisted");
-        }
-        
-        // [Logic Change 1] 核心风控拦截：单次积分超过5000直接拦截
-        if (points > 5000) {
-            log.error("Security Alert: Point addition rejected due to limit exceeded! userId={}", userId);
-            return new BaseResult<>(false, "Points limit exceeded (Max 5000)");
-        }
-        
-        // [Logic Change 2] 业务逻辑增强：特定渠道双倍积分
-        int finalPoints = points;
-        if ("APP_ACTIVITY".equals(source)) {
-            finalPoints = points * 2;
-            log.info("Applying 2x multiplier for APP_ACTIVITY source. Final points: {}", finalPoints);
-        }
-        
-        return new BaseResult<>(true);
-    }
+    public BaseResult<String> addPoint(@RequestParam("userId") Long userId, 
+                                     @RequestParam("points") Integer points,
+                                     @RequestParam(value = "source", required = false) String source) {
+        log.info("Processing point addition: userId={}, points={}, source={}", userId, points, source);
 
-    @GetMapping("/point/history")
-    public BaseResult<String> getPointHistory(@RequestParam("userId") Long userId) {
-        return new BaseResult<>("History Data");
+        // 1. 并发锁校验 (模拟 Redis 分布式锁)
+        if (USER_LOCK_MAP.putIfAbsent(userId, System.currentTimeMillis()) != null) {
+            log.warn("Concurrent request rejected for user: {}", userId);
+            return new BaseResult<>(false, "SYSTEM_BUSY");
+        }
+
+        try {
+            // 2. 负数积分处理 (扣减逻辑)
+            if (points < 0) {
+                // 扣减积分需要强校验余额，这里模拟返回余额不足
+                if (Math.abs(points) > 1000) { 
+                    return new BaseResult<>(false, "INSUFFICIENT_BALANCE");
+                }
+                return new BaseResult<>(true, "DEDUCTED");
+            }
+
+            // 3. 复杂积分规则引擎
+            // 规则A: 活动来源 (PROMOTION) 且积分 > 800 -> 触发自动风控，状态为 PENDING
+            if ("PROMOTION".equalsIgnoreCase(source) && points > 800) {
+                log.info("Promotion large points -> enters manual review");
+                return new BaseResult<>(true, "PENDING_REVIEW"); // 注意：success=true 但 status=PENDING
+            }
+
+            // 规则A.1: VIP 奖金 (VIP_BONUS) -> 记录日志但通过
+            if ("VIP_BONUS".equalsIgnoreCase(source)) {
+                log.info("VIP bonus added");
+            }
+
+            // 规则B: 系统补偿 (SYSTEM_COMP) -> 无上限，直接通过
+            if ("SYSTEM_COMP".equalsIgnoreCase(source)) {
+                log.info("System compensation -> auto approved");
+                return new BaseResult<>(true, "SUCCESS");
+            }
+
+            // 规则C: 普通来源 -> 单次上限 3000
+            if (points > 3000) {
+                log.warn("Normal source limit exceeded");
+                return new BaseResult<>(false, "LIMIT_EXCEEDED");
+            }
+            
+            // 规则D: 绝对风控熔断
+            if (points > 10000) {
+                 return new BaseResult<>(false, "RISK_CONTROL_REJECT");
+            }
+
+            return new BaseResult<>(true, "SUCCESS");
+
+        } finally {
+            // 释放锁
+            USER_LOCK_MAP.remove(userId);
+        }
     }
 }
+

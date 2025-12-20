@@ -1,0 +1,4 @@
+# file: D:\lls\zhoulubin\Downloads\cloudE-master\code_diff_project\backend\analyzer\multi_project_tracer.py
+# hypothesis_version: 6.148.7
+
+['.', 'api', 'api_call', 'class_reference', 'detail', 'file', 'line', 'path', 'project', 'snippet', 'type', '没有关联项目需要扫描跨项目影响']
