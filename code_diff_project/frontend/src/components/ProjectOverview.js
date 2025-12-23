@@ -27,6 +27,9 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
             groups[key].push(r);
         });
         
+        // Debug: Log grouping results
+        console.log('[ProjectOverview] Grouped reports:', groups);
+        
         // Sort keys: Task IDs desc, then time strings desc
         return Object.entries(groups).sort((a, b) => {
             // Extract numbers if Task ID
@@ -54,14 +57,14 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                 <p className="text-slate-500 mt-2">该项目共检测到 {reports.length} 个文件变更记录，共 {totalTasks} 个分析批次。</p>
             </div>
             
-            <div className="space-y-10 pb-10">
+            <div className="space-y-4 pb-10">
                 {currentTasks.map(([batchKey, groupReports], idx) => {
                     // Global index for display
                     const globalIdx = (currentPage - 1) * pageSize + idx;
                     
-                    // Calculate representative time for the batch (e.g., latest file time)
-                    const latestTime = new Date(Math.max(...groupReports.map(r => new Date(r.created_at))));
-                    const timeDisplay = latestTime.toLocaleString();
+                    // Calculate representative time for the batch (use the first/earliest file time)
+                    const firstTime = new Date(Math.min(...groupReports.map(r => new Date(r.created_at))));
+                    const timeDisplay = firstTime.toLocaleString();
 
                     // Get task info from the first report
                     const firstReport = groupReports[0] || {};
@@ -113,7 +116,7 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                                             </span>
                                         )}
                                     </span>
-                                    <span className="text-[10px] text-slate-400">最新生成时间: {timeDisplay}</span>
+                                    <span className="text-[10px] text-slate-400">批次生成时间: {timeDisplay}</span>
                                 </div>
                             </div>
                             <span className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
@@ -171,21 +174,79 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                                 {
                                     title: '变更详情',
                                     dataIndex: 'change_intent',
-                                    render: (text) => (
-                                        <div className="text-xs text-slate-600 line-clamp-2 max-w-xl" title={text}>
-                                            {text || <span className="text-slate-300 italic">暂无描述</span>}
-                                        </div>
-                                    )
-                                },
-                                {
-                                    title: '生成时间',
-                                    dataIndex: 'created_at',
-                                    width: 150,
-                                    render: (text) => (
-                                        <div className="text-xs text-slate-400 flex items-center gap-1">
-                                            <ClockCircleOutlined /> {new Date(text).toLocaleTimeString()}
-                                        </div>
-                                    )
+                                    render: (text) => {
+                                        if (!text) {
+                                            return <span className="text-slate-300 italic text-xs">暂无描述</span>;
+                                        }
+                                        
+                                        // 尝试解析JSON
+                                        try {
+                                            const data = typeof text === 'string' ? JSON.parse(text) : text;
+                                            
+                                            // 如果是数组（符合后端定义）
+                                            if (Array.isArray(data) && data.length > 0) {
+                                                // 显示所有变更点的摘要
+                                                return (
+                                                    <div className="text-xs text-slate-600 max-w-xl space-y-1">
+                                                        {data.map((item, index) => {
+                                                            const summary = item.summary || '';
+                                                            if (!summary) return null;
+                                                            
+                                                            return (
+                                                                <div key={index} className="flex items-start gap-1">
+                                                                    <span className="text-slate-400 mt-0.5">•</span>
+                                                                    <span className="flex-1 line-clamp-1" title={summary}>
+                                                                        {summary}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        {data.every(item => !item.summary) && (
+                                                            <span className="text-slate-400 italic">无详细描述</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            }
+                                            
+                                            // 如果是对象（兼容旧格式）
+                                            if (typeof data === 'object' && data !== null) {
+                                                const summary = data.summary || data.description || data.intent || '';
+                                                const details = data.details || '';
+                                                
+                                                return (
+                                                    <div className="text-xs text-slate-600 max-w-xl">
+                                                        {summary && (
+                                                            <div className="line-clamp-2" title={summary}>
+                                                                {summary}
+                                                            </div>
+                                                        )}
+                                                        {!summary && details && (
+                                                            <div className="line-clamp-2" title={details}>
+                                                                {details}
+                                                            </div>
+                                                        )}
+                                                        {!summary && !details && (
+                                                            <span className="text-slate-400 italic">无详细描述</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            }
+                                            
+                                            // 如果是字符串，直接显示
+                                            return (
+                                                <div className="text-xs text-slate-600 line-clamp-2 max-w-xl" title={String(data)}>
+                                                    {String(data)}
+                                                </div>
+                                            );
+                                        } catch (e) {
+                                            // 如果不是JSON，直接显示原文本
+                                            return (
+                                                <div className="text-xs text-slate-600 line-clamp-2 max-w-xl" title={text}>
+                                                    {text}
+                                                </div>
+                                            );
+                                        }
+                                    }
                                 },
                                 {
                                     title: '操作',

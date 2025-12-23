@@ -5,7 +5,8 @@ from .views import (
     AnalysisTaskViewSet, 
     ProjectRelationViewSet,
     GitOrganizationViewSet,
-    DiscoveredProjectViewSet
+    DiscoveredProjectViewSet,
+    DashboardViewSet
 )
 
 router = DefaultRouter()
@@ -14,6 +15,7 @@ router.register(r'tasks', AnalysisTaskViewSet)
 router.register(r'project-relations', ProjectRelationViewSet)
 router.register(r'git-organizations', GitOrganizationViewSet)
 router.register(r'discovered-projects', DiscoveredProjectViewSet)
+router.register(r'dashboard', DashboardViewSet, basename='dashboard')
 
 urlpatterns = [
     path('', include(router.urls)),

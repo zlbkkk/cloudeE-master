@@ -43,6 +43,8 @@ def clone_or_update_project(proj_config, workspace_dir, idx, total):
                 clone_cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='ignore',  # 忽略编码错误
                 timeout=300  # 5分钟超时
             )
             
@@ -60,11 +62,11 @@ def clone_or_update_project(proj_config, workspace_dir, idx, total):
             
             # 重置所有本地更改
             reset_local_cmd = ['git', '-C', project_local_path, 'reset', '--hard']
-            subprocess.run(reset_local_cmd, capture_output=True, text=True)
+            subprocess.run(reset_local_cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore')
             
             # 清理未跟踪的文件
             clean_cmd = ['git', '-C', project_local_path, 'clean', '-fd']
-            subprocess.run(clean_cmd, capture_output=True, text=True)
+            subprocess.run(clean_cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore')
             
             # 执行 git fetch
             fetch_cmd = ['git', '-C', project_local_path, 'fetch', '--all', '--prune']
@@ -72,6 +74,8 @@ def clone_or_update_project(proj_config, workspace_dir, idx, total):
                 fetch_cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='ignore',
                 timeout=120  # 2分钟超时
             )
             
@@ -85,7 +89,9 @@ def clone_or_update_project(proj_config, workspace_dir, idx, total):
         check_result = subprocess.run(
             check_branch_cmd,
             capture_output=True,
-            text=True
+            text=True,
+            encoding='utf-8',
+            errors='ignore'
         )
         
         if check_result.returncode != 0:
@@ -93,7 +99,7 @@ def clone_or_update_project(proj_config, workspace_dir, idx, total):
             # 尝试使用 master 或 main
             for default_branch in ['master', 'main']:
                 check_cmd = ['git', '-C', project_local_path, 'rev-parse', '--verify', f'origin/{default_branch}']
-                check_result = subprocess.run(check_cmd, capture_output=True, text=True)
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore')
                 if check_result.returncode == 0:
                     proj_branch = default_branch
                     logger.info(f"[{idx}/{total}] 使用默认分支: {default_branch}")
@@ -104,7 +110,9 @@ def clone_or_update_project(proj_config, workspace_dir, idx, total):
         checkout_result = subprocess.run(
             checkout_cmd,
             capture_output=True,
-            text=True
+            text=True,
+            encoding='utf-8',
+            errors='ignore'
         )
         
         if checkout_result.returncode != 0:
@@ -117,7 +125,9 @@ def clone_or_update_project(proj_config, workspace_dir, idx, total):
         reset_result = subprocess.run(
             reset_cmd,
             capture_output=True,
-            text=True
+            text=True,
+            encoding='utf-8',
+            errors='ignore'
         )
         
         if reset_result.returncode != 0:

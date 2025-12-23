@@ -20,11 +20,14 @@ class ProjectRelationSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class GitOrganizationSerializer(serializers.ModelSerializer):
+    default_branch = serializers.CharField(default='master', required=False)
+    
     class Meta:
         model = GitOrganization
         fields = '__all__'
         extra_kwargs = {
-            'access_token': {'write_only': True}  # Token 不在读取时返回
+            'access_token': {'write_only': True},  # Token 不在读取时返回
+            'default_branch': {'default': 'master', 'required': False}
         }
 
 class DiscoveredProjectSerializer(serializers.ModelSerializer):

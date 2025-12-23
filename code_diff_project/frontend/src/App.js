@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Empty, Spin } from 'antd';
+import { Empty, Spin, Button } from 'antd';
 import { 
     ClockCircleOutlined, PlayCircleOutlined, ProjectOutlined, 
     AppstoreOutlined, FolderOpenOutlined, RightOutlined, DownOutlined, 
-    SafetyCertificateOutlined, LinkOutlined 
+    SafetyCertificateOutlined, FileTextOutlined, ArrowLeftOutlined,
+    DashboardOutlined
 } from '@ant-design/icons';
 
 import { REPORTS_URL, TASKS_URL } from './utils/api';
@@ -14,17 +15,19 @@ import TaskListView from './components/TaskListView';
 import AnalysisConfigModal from './components/AnalysisConfigModal';
 import ProjectRelations from './pages/ProjectRelations';
 import AutoDiscoveryConfig from './components/AutoDiscoveryConfig';
+import Dashboard from './components/Dashboard';
 
 function App() {
   const [reports, setReports] = useState([]);
   const [tasks, setTasks] = useState([]); 
-  const [activeTab, setActiveTab] = useState('reports'); // 'reports' | 'tasks' | 'relations'
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'reports' | 'tasks' | 'auto-discovery'
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null); 
   const [expandedProjects, setExpandedProjects] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false); // Used for loading state of button, though modal handles logic
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
+  const [isProjectLoading, setIsProjectLoading] = useState(false); // New: loading state for project switch
 
   const fetchReports = React.useCallback(async () => {
     setLoading(true);
@@ -126,11 +129,8 @@ function App() {
 
           // Priority 1: Group by Task ID if available
           if (r.task) {
-              const rDate = new Date(r.created_at);
-              // Use Task ID combined with date for display text, but grouping relies on ID
-              // To make it look nice in UI: "YYYY-MM-DD HH:mm (Task #ID)"
-              const timeStr = `${rDate.getFullYear()}-${String(rDate.getMonth()+1).padStart(2, '0')}-${String(rDate.getDate()).padStart(2, '0')} ${String(rDate.getHours()).padStart(2, '0')}:${String(rDate.getMinutes()).padStart(2, '0')}`;
-              batchKey = `${timeStr} (Task #${r.task})`;
+              // Use Task ID ONLY for grouping to avoid splitting by time
+              batchKey = `Task #${r.task}`;
           } else {
               // Priority 2: Legacy Fuzzy Timestamp grouping
               const rDate = new Date(r.created_at);
@@ -167,20 +167,26 @@ function App() {
 
   const [expandedBatches, setExpandedBatches] = useState([]);
 
-  const handleProjectClick = (projName) => {
-      if (expandedProjects.includes(projName)) {
-          setExpandedProjects(prev => prev.filter(p => p !== projName));
-      } else {
-          setExpandedProjects(prev => [...prev, projName]);
-          const batches = Object.keys(projectGroups[projName]).sort().reverse();
-          if (batches.length > 0) {
-              const latestBatch = batches[0];
-              setExpandedBatches(prev => [...prev, `${projName}-${latestBatch}`]);
-          }
-      }
-      setSelectedProject(projName);
+  const handleProjectClick = React.useCallback((projName) => {
+      // Use setTimeout to defer heavy computation
+      setIsProjectLoading(true);
       setSelectedReportId(null);
-  };
+      
+      setTimeout(() => {
+          if (expandedProjects.includes(projName)) {
+              setExpandedProjects(prev => prev.filter(p => p !== projName));
+          } else {
+              setExpandedProjects(prev => [...prev, projName]);
+              const batches = Object.keys(projectGroups[projName]).sort().reverse();
+              if (batches.length > 0) {
+                  const latestBatch = batches[0];
+                  setExpandedBatches(prev => [...prev, `${projName}-${latestBatch}`]);
+              }
+          }
+          setSelectedProject(projName);
+          setIsProjectLoading(false);
+      }, 0);
+  }, [expandedProjects, projectGroups]);
 
   const handleBatchClick = (e, batchKey) => {
       e.stopPropagation();
@@ -212,9 +218,16 @@ function App() {
         {/* Main Navigation Tabs - 垂直排列 */}
         <div className="flex flex-col gap-2">
             <button 
+                onClick={() => setActiveTab('dashboard')}
+                className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+                <DashboardOutlined className="text-base" /> 数据统计
+            </button>
+            <button 
                 onClick={() => {
                     setActiveTab('reports');
                     setSelectedReportId(null);
+                    setSelectedProject(null);
                 }}
                 className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'reports' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
@@ -226,17 +239,19 @@ function App() {
             >
                 <ClockCircleOutlined className="text-base" /> 任务管理
             </button>
+            {/* 项目关联功能已隐藏 - 保留代码以便日后使用
             <button 
                 onClick={() => setActiveTab('relations')}
                 className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'relations' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
                 <LinkOutlined className="text-base" /> 项目关联
             </button>
+            */}
             <button 
                 onClick={() => setActiveTab('auto-discovery')}
                 className={`w-full py-2.5 px-3 text-sm font-bold rounded-lg transition-all flex items-center gap-2.5 ${activeTab === 'auto-discovery' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
-                <FolderOpenOutlined className="text-base" /> 自动发现
+                <FolderOpenOutlined className="text-base" /> 项目集
             </button>
         </div>
       </div>
@@ -278,79 +293,33 @@ function App() {
                     </div>
                 </div>
                 
-                <div className="p-3 space-y-1.5">
+                <div className="p-2.5 space-y-1">
                     {loading && reports.length === 0 ? (
                     <div className="p-4 text-center text-slate-400 text-xs">加载中...</div>
                     ) : (
                     Object.keys(projectGroups).map(projName => {
-                    // ... existing project tree logic ...
-                    const isExpanded = expandedProjects.includes(projName);
                     const isSelected = selectedProject === projName;
                     const batches = projectGroups[projName];
-                    const sortedBatches = Object.keys(batches).sort().reverse();
                     const totalFiles = Object.values(batches).flat().length;
 
                     return (
-                    <div key={projName} className="mb-1">
-                        <button
-                            onClick={() => handleProjectClick(projName)}
-                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 group font-medium text-sm text-left ${
-                                isSelected && !selectedReportId ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-700 hover:bg-slate-50'
-                            }`}
-                        >
-                            <span className="text-xs text-slate-400">{isExpanded ? <DownOutlined /> : <RightOutlined />}</span>
-                            <FolderOpenOutlined className={isSelected ? 'text-blue-500' : 'text-slate-400'} />
-                            <span className="truncate flex-1">{projName}</span>
-                            <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded-full">{totalFiles}</span>
-                        </button>
-
-                        {isExpanded && (
-                            <div className="ml-4 pl-2 border-l border-slate-100 mt-1 space-y-1">
-                                {sortedBatches.map(timeKey => {
-                                    const batchKey = `${projName}-${timeKey}`;
-                                    const isBatchExpanded = expandedBatches.includes(batchKey);
-                                    const batchReports = batches[timeKey];
-                                    return (
-                                        <div key={batchKey}>
-                                            <button
-                                                onClick={(e) => handleBatchClick(e, batchKey)}
-                                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-slate-500 hover:bg-slate-50 transition-colors"
-                                            >
-                                                <span className="text-[10px] text-slate-300">{isBatchExpanded ? <DownOutlined /> : <RightOutlined />}</span>
-                                                <ClockCircleOutlined className="text-[10px]" />
-                                                <span className="truncate flex-1">{timeKey}</span>
-                                                <span className="text-[10px] bg-slate-50 px-1 rounded">{batchReports.length}</span>
-                                            </button>
-                                            {isBatchExpanded && (
-                                                <div className="ml-3 pl-2 border-l border-slate-100 mt-1 space-y-0.5">
-                                                    {batchReports.map(report => (
-                                                        <button
-                                                            key={report.id}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setSelectedProject(projName);
-                                                                setSelectedReportId(report.id);
-                                                            }}
-                                                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-xs text-left ${
-                                                                selectedReportId === report.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-600 hover:bg-slate-50'
-                                                            }`}
-                                                        >
-                                                            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                                                report.risk_level === 'CRITICAL' ? 'bg-red-500' : 
-                                                                report.risk_level === 'HIGH' ? 'bg-orange-500' : 
-                                                                report.risk_level === 'MEDIUM' ? 'bg-yellow-500' : 'bg-green-500'
-                                                            }`}></div>
-                                                            <span className="truncate">{report.file_name}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
+                    <button
+                        key={projName} 
+                        onClick={() => handleProjectClick(projName)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 text-left ${
+                            isSelected && !selectedReportId 
+                                ? 'bg-blue-600 text-white shadow-md' 
+                                : 'text-slate-700 hover:bg-slate-100'
+                        }`}
+                    >
+                        <FolderOpenOutlined className={`text-sm ${isSelected && !selectedReportId ? 'text-white' : 'text-slate-400'}`} />
+                        <span className="truncate flex-1 font-medium text-sm">{projName}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                            isSelected && !selectedReportId 
+                                ? 'bg-blue-500 text-white' 
+                                : 'bg-slate-100 text-slate-500'
+                        }`}>{totalFiles}</span>
+                    </button>
                     );
                     })
                     )}
@@ -394,8 +363,9 @@ function App() {
                 </div>
             </>
         ) : (
+            /* 项目关联功能已隐藏 - 保留代码以便日后使用
+            activeTab === 'relations' ? (
             <>
-                {/* 项目关联标题 */}
                 <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-10">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                         <LinkOutlined className="text-xs" />
@@ -415,19 +385,28 @@ function App() {
                     </div>
                 </div>
             </>
+            ) : 
+            */
+            null
         )}
       </div>
     </div>
   );
 
   const renderMainContent = () => {
+      if (activeTab === 'dashboard') {
+          return <Dashboard />;
+      }
+      
       if (activeTab === 'tasks') {
           return <TaskListView tasks={tasks} />;
       }
       
+      /* 项目关联功能已隐藏 - 保留代码以便日后使用
       if (activeTab === 'relations') {
           return <ProjectRelations />;
       }
+      */
       
       if (activeTab === 'auto-discovery') {
           return <AutoDiscoveryConfig />;
@@ -435,14 +414,42 @@ function App() {
       
       // Reports view
       if (currentReport) return <ReportDetail report={currentReport} onBack={() => setSelectedReportId(null)} />;
+      
+      // Show loading state when switching projects
+      if (isProjectLoading) {
+          return (
+              <div className="flex flex-col items-center justify-center h-full">
+                  <Spin size="large" />
+                  <p className="mt-4 text-slate-500">加载项目数据中...</p>
+              </div>
+          );
+      }
+      
       if (selectedProject) return <ProjectOverview projectName={selectedProject} reports={currentProjectReports} onSelectReport={setSelectedReportId} />;
       
-      return (
-        <div className="flex flex-col items-center justify-center h-full text-slate-400">
-           <Empty description={false} className="opacity-50" />
-           <p className="mt-4">请从左侧选择一个项目或报告查看详情</p>
-        </div>
-      );
+      // Show empty state or auto-select first project
+      if (Object.keys(projectGroups).length === 0) {
+          return (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                  <Empty description={false} className="opacity-50" />
+                  <p className="mt-4">暂无分析项目</p>
+              </div>
+          );
+      }
+      
+      // Auto-select first project if none selected
+      if (!selectedProject) {
+          const firstProject = Object.keys(projectGroups)[0];
+          setTimeout(() => setSelectedProject(firstProject), 0);
+          return (
+              <div className="flex flex-col items-center justify-center h-full">
+                  <Spin size="large" />
+                  <p className="mt-4 text-slate-500">加载项目数据中...</p>
+              </div>
+          );
+      }
+      
+      return null;
   };
 
   return (
@@ -453,35 +460,58 @@ function App() {
         <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 px-5 py-3 flex justify-between items-center flex-shrink-0 z-10 sticky top-0">
           <div>
             <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+               {activeTab === 'dashboard' && <DashboardOutlined className="text-blue-600" />}
                {activeTab === 'reports' && <SafetyCertificateOutlined className="text-blue-600" />}
                {activeTab === 'tasks' && <ClockCircleOutlined className="text-blue-600" />}
+               {/* 项目关联功能已隐藏 - 保留代码以便日后使用
                {activeTab === 'relations' && <LinkOutlined className="text-blue-600" />}
+               */}
                {activeTab === 'auto-discovery' && <FolderOpenOutlined className="text-blue-600" />}
+               {activeTab === 'dashboard' && '数据统计分析'}
                {activeTab === 'reports' && '精准测试分析大屏'}
                {activeTab === 'tasks' && '分析任务监控台'}
+               {/* 项目关联功能已隐藏 - 保留代码以便日后使用
                {activeTab === 'relations' && '项目关联管理'}
-               {activeTab === 'auto-discovery' && '自动项目发现'}
+               */}
+               {activeTab === 'auto-discovery' && '项目集管理'}
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">
+               {activeTab === 'dashboard' && '系统整体运行数据与分析趋势可视化'}
                {activeTab === 'reports' && '基于代码差异与链路分析的智能评估系统'}
                {activeTab === 'tasks' && '实时监控分析任务执行状态'}
+               {/* 项目关联功能已隐藏 - 保留代码以便日后使用
                {activeTab === 'relations' && '配置主项目与关联项目的依赖关系'}
-               {activeTab === 'auto-discovery' && '自动发现 Git 组织下的所有项目并分析依赖关系'}
+               */}
+               {activeTab === 'auto-discovery' && '管理 Git 组织配置，自动发现并同步项目信息'}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-             <button 
-                onClick={() => setIsAnalysisModalOpen(true)}
-                disabled={analyzing}
-                className={`bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-xs font-medium shadow-sm shadow-blue-600/20 ${analyzing ? 'opacity-70 cursor-not-allowed' : ''}`}
-             >
-                {analyzing ? <Spin size="small" className="text-white mr-1"/> : <PlayCircleOutlined />}
-                {analyzing ? '正在分析...' : '新建分析'}
-             </button>
+          <div className="flex items-center gap-2">
+             {/* 返回列表按钮 - 只在查看详情时显示，放在新建分析左侧 */}
+             {activeTab === 'reports' && selectedReportId && (
+               <Button 
+                 type="text" 
+                 icon={<ArrowLeftOutlined />} 
+                 onClick={() => setSelectedReportId(null)}
+                 className="text-slate-600 hover:text-blue-600 hover:bg-slate-50 px-2 font-medium"
+               >
+                 返回列表
+               </Button>
+             )}
+             
+             {activeTab === 'reports' && (
+               <button 
+                  onClick={() => setIsAnalysisModalOpen(true)}
+                  disabled={analyzing}
+                  className={`bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-xs font-medium shadow-sm shadow-blue-600/20 ${analyzing ? 'opacity-70 cursor-not-allowed' : ''}`}
+               >
+                  {analyzing ? <Spin size="small" className="text-white mr-1"/> : <PlayCircleOutlined />}
+                  {analyzing ? '正在分析...' : '新建分析'}
+               </button>
+             )}
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 scroll-smooth">
+        <main className={`flex-1 overflow-y-auto scroll-smooth ${activeTab === 'auto-discovery' ? 'p-0' : 'p-4'}`}>
            {renderMainContent()}
         </main>
       </div>

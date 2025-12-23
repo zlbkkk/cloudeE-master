@@ -484,19 +484,8 @@ const ReportDetail = ({ report, onBack }) => {
   return (
     <div className="space-y-3 max-w-6xl mx-auto pb-6 font-sans">
       
-      {/* Header with Back Button */}
+      {/* Header */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 transition-all hover:shadow-md">
-         {/* Back Button Row */}
-         <div className="mb-4">
-            <Button 
-                type="text" 
-                icon={<ArrowLeftOutlined />} 
-                onClick={onBack}
-                className="text-slate-500 hover:text-blue-600 hover:bg-slate-50 px-2 pl-0"
-            >
-                返回列表
-            </Button>
-         </div>
 
          <div className="flex justify-between items-start">
              <div className="flex gap-4">
@@ -669,12 +658,12 @@ const ReportDetail = ({ report, onBack }) => {
                                               { 
                                                   title: '业务场景', 
                                                   dataIndex: 'scenario', 
-                                                  width: 140,
+                                                  width: 200,
                                                   render: (text, record) => (
-                                                      <div className="font-bold text-slate-700 text-xs whitespace-normal break-words">
+                                                      <div className="font-bold text-slate-700 text-xs whitespace-normal" style={{ wordBreak: 'break-word' }}>
                                                           {text || '通用规则'}
                                                           {record.related_file && (
-                                                              <div className="mt-1 font-mono text-[9px] text-slate-400 font-normal break-all whitespace-normal" title={record.related_file}>
+                                                              <div className="mt-1 font-mono text-[9px] text-slate-400 font-normal whitespace-normal" style={{ wordBreak: 'break-word' }} title={record.related_file}>
                                                                   <FileTextOutlined className="mr-1" />
                                                                   {record.related_file.split('/').pop()}
                                                               </div>
@@ -685,14 +674,14 @@ const ReportDetail = ({ report, onBack }) => {
                                               { 
                                                   title: '变更前 (Old)', 
                                                   dataIndex: 'old_rule', 
-                                                  width: 200,
-                                                  render: t => <div className="text-xs text-slate-500 bg-slate-50 p-1.5 rounded border border-slate-100 whitespace-pre-wrap break-words">{t || '-'}</div> 
+                                                  width: 280,
+                                                  render: t => <div className="text-xs text-slate-500 bg-slate-50 p-1.5 rounded border border-slate-100 whitespace-pre-wrap" style={{ wordBreak: 'break-word' }}>{t || '-'}</div> 
                                               },
                                               { 
                                                   title: '变更后 (New)', 
                                                   dataIndex: 'new_rule', 
-                                                  width: 200,
-                                                  render: t => <div className="text-xs text-slate-800 font-medium bg-emerald-50/50 p-1.5 rounded border border-emerald-100 whitespace-pre-wrap break-words">{t || '-'}</div> 
+                                                  width: 280,
+                                                  render: t => <div className="text-xs text-slate-800 font-medium bg-emerald-50/50 p-1.5 rounded border border-emerald-100 whitespace-pre-wrap" style={{ wordBreak: 'break-word' }}>{t || '-'}</div> 
                                               },
                                               { 
                                                   title: '影响', 
@@ -857,7 +846,7 @@ const ReportDetail = ({ report, onBack }) => {
                             {t.replace(/^.*[\\/]workspace[\\/][^\\/]+[\\/]/, '')}
                         </div>
                     )},
-                    { title: '行号', dataIndex: 'line_number', width: 80, align: 'center', render: t => <span className="font-mono text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">L{t}</span> },
+                    { title: '行号', dataIndex: 'line_number', width: 150, align: 'center', render: t => <span className="font-mono text-xs text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded whitespace-nowrap">Line: {t}</span> },
                     { 
                         title: '影响描述', 
                         dataIndex: 'impact_description', 

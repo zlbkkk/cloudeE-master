@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>可折叠代码片段 - 样式展示</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+        }
+        .code-font {
+            font-family: 'Courier New', Courier, monospace;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 p-8">
+    <div class="max-w-4xl mx-auto space-y-8">
+        <!-- 标题 -->
+        <div class="bg-white rounded-lg shadow-md p-6 border border-slate-200">
+            <h1 class="text-3xl font-bold text-slate-800 mb-2">可折叠代码片段 - 样式展示</h1>
+            <p class="text-slate-600">方案3：默认显示目标行，点击展开上下文</p>
+        </div>
+
+        <!-- 状态1：收起状态 -->
+        <div class="bg-white rounded-lg shadow-md p-6 border border-slate-200">
+            <h2 class="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">状态1</span>
+                收起状态（默认）
+            </h2>
+            <p class="text-slate-600 mb-4 text-sm">只显示目标行，界面简洁，不占用过多空间</p>
+            
+            <!-- 实际组件样式 -->
+            <div class="w-full max-w-xl mx-auto">
+                <div class="bg-slate-900 rounded-lg border border-slate-700 shadow-md overflow-hidden">
+                    <!-- Header -->
+                    <div class="flex justify-between items-center px-3 py-1.5 bg-slate-800 border-b border-slate-700">
+                        <div class="flex items-center gap-2 text-xs text-slate-400">
+                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+                            </svg>
+                            <span class="code-font">
+                                NotificationController.java
+                                <span class="text-slate-500 ml-1">:L19</span>
+                            </span>
+                        </div>
+                        <button class="text-[10px] text-slate-400 hover:text-slate-200 font-medium uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer">
+                            <svg class="w-2 h-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                            </svg>
+                            展开上下文
+                        </button>
+                    </div>
+
+                    <!-- 目标行（高亮） -->
+                    <div class="code-font text-[11px] leading-relaxed">
+                        <div class="bg-amber-500/10 border-l-2 border-amber-500">
+                            <div class="px-3 py-1.5 text-slate-100">
+                                <span class="text-amber-500 mr-3 font-bold select-none inline-block w-8 text-right">19</span>
+                                <span class="text-slate-100 font-medium">public String sendNotification(@RequestBody UserDTO user, @RequestParam String message) {</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 提示信息 -->
+                    <div class="px-3 py-1.5 bg-slate-800/30 border-t border-slate-700/50 text-center">
+                        <span class="text-[10px] text-slate-500">点击上方按钮查看完整上下文</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 状态2：展开状态 -->
+        <div class="bg-white rounded-lg shadow-md p-6 border border-slate-200">
+            <h2 class="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm">状态2</span>
+                展开状态
+            </h2>
+            <p class="text-slate-600 mb-4 text-sm">显示完整上下文（上下各2行），目标行保持高亮</p>
+            
+            <!-- 实际组件样式 -->
+            <div class="w-full max-w-xl mx-auto">
+                <div class="bg-slate-900 rounded-lg border border-slate-700 shadow-md overflow-hidden">
+                    <!-- Header -->
+                    <div class="flex justify-between items-center px-3 py-1.5 bg-slate-800 border-b border-slate-700">
+                        <div class="flex items-center gap-2 text-xs text-slate-400">
+                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+                            </svg>
+                            <span class="code-font">
+                                NotificationController.java
+                                <span class="text-slate-500 ml-1">:L19</span>
+                            </span>
+                        </div>
+                        <button class="text-[10px] text-slate-400 hover:text-slate-200 font-medium uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer">
+                            <svg class="w-2 h-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd"/>
+                            </svg>
+                            收起上下文
+                        </button>
+                    </div>
+
+                    <!-- Code Content -->
+                    <div class="code-font text-[11px] leading-relaxed">
+                        <!-- 上文 -->
+                        <div class="bg-slate-800/50 border-b border-slate-700/50">
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">17</span>
+                                <span class="text-slate-400">    @Autowired</span>
+                            </div>
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">18</span>
+                                <span class="text-slate-400">    private NotificationService notificationService;</span>
+                            </div>
+                        </div>
+
+                        <!-- 目标行（高亮） -->
+                        <div class="bg-amber-500/10 border-l-2 border-amber-500">
+                            <div class="px-3 py-1.5 text-slate-100">
+                                <span class="text-amber-500 mr-3 font-bold select-none inline-block w-8 text-right">19</span>
+                                <span class="text-slate-100 font-medium">public String sendNotification(@RequestBody UserDTO user, @RequestParam String message) {</span>
+                            </div>
+                        </div>
+
+                        <!-- 下文 -->
+                        <div class="bg-slate-800/50 border-t border-slate-700/50">
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">20</span>
+                                <span class="text-slate-400">        return notificationService.sendEmail(user, message);</span>
+                            </div>
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">21</span>
+                                <span class="text-slate-400">    }</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 多个代码块示例 -->
+        <div class="bg-white rounded-lg shadow-md p-6 border border-slate-200">
+            <h2 class="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <span class="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm">场景</span>
+                多个代码块（独立控制）
+            </h2>
+            <p class="text-slate-600 mb-4 text-sm">当同一文件有多个调用位置时，每个代码块可以独立展开/收起</p>
+            
+            <div class="w-full max-w-xl mx-auto space-y-2">
+                <!-- 代码块1 - 收起 -->
+                <div class="bg-slate-900 rounded-lg border border-slate-700 shadow-md overflow-hidden">
+                    <div class="flex justify-between items-center px-3 py-1.5 bg-slate-800 border-b border-slate-700">
+                        <div class="flex items-center gap-2 text-xs text-slate-400">
+                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+                            </svg>
+                            <span class="code-font">
+                                NotificationController.java
+                                <span class="text-slate-500 ml-1">:L19</span>
+                            </span>
+                        </div>
+                        <button class="text-[10px] text-slate-400 hover:text-slate-200 font-medium uppercase tracking-wider flex items-center gap-1 transition-colors">
+                            <svg class="w-2 h-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                            </svg>
+                            展开上下文
+                        </button>
+                    </div>
+                    <div class="code-font text-[11px] leading-relaxed">
+                        <div class="bg-amber-500/10 border-l-2 border-amber-500">
+                            <div class="px-3 py-1.5 text-slate-100">
+                                <span class="text-amber-500 mr-3 font-bold select-none inline-block w-8 text-right">19</span>
+                                <span class="text-slate-100 font-medium">public String sendNotification(@RequestBody UserDTO user, @RequestParam String message) {</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="px-3 py-1.5 bg-slate-800/30 border-t border-slate-700/50 text-center">
+                        <span class="text-[10px] text-slate-500">点击上方按钮查看完整上下文</span>
+                    </div>
+                </div>
+
+                <!-- 代码块2 - 展开 -->
+                <div class="bg-slate-900 rounded-lg border border-slate-700 shadow-md overflow-hidden">
+                    <div class="flex justify-between items-center px-3 py-1.5 bg-slate-800 border-b border-slate-700">
+                        <div class="flex items-center gap-2 text-xs text-slate-400">
+                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+                            </svg>
+                            <span class="code-font">
+                                NotificationController.java
+                                <span class="text-slate-500 ml-1">:L24</span>
+                            </span>
+                        </div>
+                        <button class="text-[10px] text-slate-400 hover:text-slate-200 font-medium uppercase tracking-wider flex items-center gap-1 transition-colors">
+                            <svg class="w-2 h-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd"/>
+                            </svg>
+                            收起上下文
+                        </button>
+                    </div>
+                    <div class="code-font text-[11px] leading-relaxed">
+                        <div class="bg-slate-800/50 border-b border-slate-700/50">
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">22</span>
+                                <span class="text-slate-400"> </span>
+                            </div>
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">23</span>
+                                <span class="text-slate-400">    @PostMapping("/welcome")</span>
+                            </div>
+                        </div>
+                        <div class="bg-amber-500/10 border-l-2 border-amber-500">
+                            <div class="px-3 py-1.5 text-slate-100">
+                                <span class="text-amber-500 mr-3 font-bold select-none inline-block w-8 text-right">24</span>
+                                <span class="text-slate-100 font-medium">public String sendWelcomeEmail(@RequestBody UserDTO user) {</span>
+                            </div>
+                        </div>
+                        <div class="bg-slate-800/50 border-t border-slate-700/50">
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">25</span>
+                                <span class="text-slate-400">        return notificationService.sendWelcome(user);</span>
+                            </div>
+                            <div class="px-3 py-1 text-slate-500 hover:bg-slate-800/70 transition-colors">
+                                <span class="text-slate-600 mr-3 select-none inline-block w-8 text-right">26</span>
+                                <span class="text-slate-400">    }</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设计说明 -->
+        <div class="bg-white rounded-lg shadow-md p-6 border border-slate-200">
+            <h2 class="text-xl font-bold text-slate-800 mb-4">设计说明</h2>
+            <div class="space-y-4 text-sm text-slate-700">
+                <div class="flex gap-3">
+                    <div class="shrink-0 w-6 h-6 bg-amber-500/10 border-l-2 border-amber-500 rounded"></div>
+                    <div>
+                        <div class="font-bold">琥珀色高亮</div>
+                        <div class="text-slate-600">目标行使用琥珀色（amber-500）高亮，左侧有2px竖线标记，确保视觉焦点</div>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <div class="shrink-0 w-6 h-6 bg-slate-800/50 rounded"></div>
+                    <div>
+                        <div class="font-bold">深色背景</div>
+                        <div class="text-slate-600">上下文使用深色半透明背景（slate-800/50），与目标行形成对比</div>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <div class="shrink-0 w-6 h-6 bg-slate-900 rounded border border-slate-700"></div>
+                    <div>
+                        <div class="font-bold">暗色主题</div>
+                        <div class="text-slate-600">整体使用暗色主题（slate-900），符合代码编辑器习惯</div>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <div class="shrink-0 w-6 h-6 flex items-center justify-center text-xs code-font bg-slate-100 rounded border border-slate-300">19</div>
+                    <div>
+                        <div class="font-bold">行号显示</div>
+                        <div class="text-slate-600">每行左侧显示行号，宽度固定（w-8），右对齐，便于快速定位</div>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <div class="shrink-0 w-6 h-6 flex items-center justify-center">
+                        <svg class="w-4 h-4 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="font-bold">交互按钮</div>
+                        <div class="text-slate-600">顶部按钮显示展开/收起状态，带图标和文字，悬停时颜色变化</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 技术栈 -->
+        <div class="bg-white rounded-lg shadow-md p-6 border border-slate-200">
+            <h2 class="text-xl font-bold text-slate-800 mb-4">技术栈</h2>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <div class="font-bold text-slate-700 mb-2">前端框架</div>
+                    <ul class="space-y-1 text-slate-600">
+                        <li>• React 18</li>
+                        <li>• Ant Design 5</li>
+                        <li>• Tailwind CSS 3</li>
+                    </ul>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <div class="font-bold text-slate-700 mb-2">后端框架</div>
+                    <ul class="space-y-1 text-slate-600">
+                        <li>• Django 4</li>
+                        <li>• Python 3.9+</li>
+                        <li>• loguru（日志）</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 添加交互效果（可选）
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', function() {
+                alert('这是一个静态展示页面，实际交互在 React 组件中实现');
+            });
+        });
+    </script>
+</body>
+</html>

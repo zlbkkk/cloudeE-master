@@ -7,3 +7,8 @@ __pycache__/
 # Node
 node_modules/
 build/
+
+# Logs
+logs/*.log
+logs/*.zip
+!logs/README.md

@@ -76,33 +76,33 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'code_diff_project',
-        'USER': 'root',
-        'PASSWORD': '123456',
-        'HOST': 'localhost',
-        'PORT': '3306',
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        }
-    }
-}
-
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.mysql',
 #         'NAME': 'code_diff_project',
 #         'USER': 'root',
-#         'PASSWORD': 'Aa123456@',
-#         'HOST': '172.16.190.194',
+#         'PASSWORD': '123456',
+#         'HOST': 'localhost',
 #         'PORT': '3306',
 #         'OPTIONS': {
 #             'charset': 'utf8mb4',
 #         }
 #     }
 # }
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'code_diff_project',
+        'USER': 'root',
+        'PASSWORD': 'Aa123456@',
+        'HOST': '172.16.190.194',
+        'PORT': '3306',
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+        }
+    }
+}
 
 
 # Password validation
@@ -146,3 +146,24 @@ STATIC_URL = "static/"
 
 # CORS Config
 CORS_ALLOW_ALL_ORIGINS = True # 开发环境允许所有跨域
+
+# Git 访问 Token 配置
+# 为特定 Git 服务器配置内置 Token，避免每次都需要输入密码
+GIT_TOKENS = {
+    'git.hrlyit.com': 'Cs8ySNvnohGLBxC4esgy',  # hrlyit Git 服务器的访问 Token
+}
+
+# DeepSeek AI API 配置
+# 用于代码分析的 AI 服务
+DEEPSEEK_API_KEY = "sk-z530Iu4wiKKJqaw2TU7OeVqPj0j9d0tavygB8izRFfTMA7NY"
+# DEEPSEEK_API_URL = "https://api.chataiapi.com/v1/chat/completions"
+DEEPSEEK_API_URL = "https://api.vectorengine.ai/v1/chat/completions"  # 修正：添加完整路径
+DEEPSEEK_MODEL = "gemini-2.5-flash"
+
+# 初始化日志配置
+# 在 Django 启动时自动配置 loguru 日志系统
+try:
+    from analyzer.log_config import setup_logger
+    # 日志配置会在 log_config 模块导入时自动初始化
+except Exception as e:
+    print(f"警告：日志配置初始化失败: {e}")

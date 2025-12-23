@@ -4,6 +4,7 @@ import {
     BranchesOutlined, DeploymentUnitOutlined, ApiOutlined, ArrowDownOutlined, 
     AppstoreOutlined, CodeOutlined, FileTextOutlined, BugOutlined, InfoCircleOutlined 
 } from '@ant-design/icons';
+import CollapsibleCodeSnippet from './CollapsibleCodeSnippet';
 
 const FlowchartModal = ({ visible, onClose, data, sourceFile, providerService }) => {
   if (!visible || !data) return null;
@@ -106,28 +107,13 @@ const FlowchartModal = ({ visible, onClose, data, sourceFile, providerService })
             </div>
          </div>
 
-         {/* Call Snippet */}
-         {data.call_snippet && (
-             <div className="w-full max-w-xl bg-slate-900 rounded-lg border border-slate-700 shadow-md overflow-hidden z-10 mt-2">
-                 {/* Snippet Header */}
-                 <div className="flex justify-between items-center px-3 py-1.5 bg-slate-800 border-b border-slate-700">
-                     <div className="flex items-center gap-2 text-xs text-slate-400">
-                         <FileTextOutlined />
-                         <span className="font-mono">
-                            {data.file_path ? data.file_path.split(/[/\\]/).pop() : 'Snippet'}
-                            {data.line_number && data.line_number !== 'N/A' && <span className="text-slate-500 ml-1">:{data.line_number}</span>}
-                         </span>
-                     </div>
-                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                        Context Preview
-                     </div>
-                 </div>
-                 
-                 {/* Code Content */}
-                 <div className="p-3 font-mono text-[11px] leading-relaxed text-slate-300 overflow-x-auto">
-                    <pre className="whitespace-pre-wrap break-all">{data.call_snippet}</pre>
-                 </div>
-             </div>
+         {/* Call Snippet - 使用新的可折叠组件 */}
+         {(data.call_snippet_data || data.call_snippet) && (
+             <CollapsibleCodeSnippet 
+                 snippetData={data.call_snippet_data || data.call_snippet}
+                 fileName={data.file_path ? data.file_path.split(/[/\\]/).pop() : 'Snippet'}
+                 lineNumber={data.line_number}
+             />
          )}
 
          {/* Impact Box (Risk Analysis) */}

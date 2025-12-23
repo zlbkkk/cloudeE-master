@@ -60,7 +60,14 @@ def save_to_db(filename, report, diff_content, project_name="Unknown", task_id=N
 
 def refine_report_with_static_analysis(report, root_dir):
     """
-    Post-process the AI report to fill in missing details (like line numbers) using local static analysis.
+    Post-process the AI report to verify and correct line numbers using local static analysis.
+    
+    改进逻辑：
+    1. 总是尝试通过 call_snippet 或 target_method 搜索真实行号
+    2. 如果搜索到的行号存在：
+       - 如果和 AI 返回的不一致，使用搜索到的（修正错误）
+       - 如果一致，保留 AI 返回的（验证通过）
+    3. 如果搜索不到，保留 AI 返回的行号
     """
     if not report or 'downstream_dependency' not in report:
         return report
@@ -69,72 +76,107 @@ def refine_report_with_static_analysis(report, root_dir):
     if not dependencies:
         return report
 
-    console.print("[Info] Refining report with local code search...", style="dim")
+    console.print("[Info] Verifying and refining line numbers with local code search...", style="dim")
     
     for dep in dependencies:
-        # Check if line_number is missing or invalid
-        line_num = dep.get('line_number')
-        is_invalid_line = not line_num or str(line_num).strip() in ['无', 'N/A', '0', '-']
+        file_path = dep.get('file_path')
+        target_method = dep.get('target_method')
+        call_snippet = dep.get('call_snippet')
+        ai_line_num = dep.get('line_number')  # AI 返回的行号
         
-        if is_invalid_line:
-            file_path = dep.get('file_path')
-            target_method = dep.get('target_method')
-            call_snippet = dep.get('call_snippet')
-            
-            if not file_path: continue
+        if not file_path:
+            continue
 
-            # Try to locate the file
-            local_path = None
-            if os.path.exists(file_path):
-                local_path = file_path
+        # Try to locate the file
+        local_path = None
+        if os.path.exists(file_path):
+            local_path = file_path
+        else:
+            # 1. Try relative path from root_dir
+            candidate = os.path.join(root_dir, file_path)
+            if os.path.exists(candidate):
+                local_path = candidate
             else:
-                # 1. Try relative path from root_dir
-                candidate = os.path.join(root_dir, file_path)
-                if os.path.exists(candidate):
-                    local_path = candidate
-                else:
-                    # 2. Search by filename
-                    filename = os.path.basename(file_path)
-                    for root, dirs, files in os.walk(root_dir):
-                        if filename in files:
-                            local_path = os.path.join(root, filename)
+                # 2. Search by filename
+                filename = os.path.basename(file_path)
+                for root, dirs, files in os.walk(root_dir):
+                    if filename in files:
+                        local_path = os.path.join(root, filename)
+                        break
+        
+        if local_path:
+            try:
+                with open(local_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    
+                found_line = None
+                
+                # Strategy 1: Search for snippet
+                if call_snippet and call_snippet not in ['无', 'N/A', '']:
+                    clean_snippet = call_snippet.strip().replace(';', '')
+                    for i, line in enumerate(lines):
+                        if clean_snippet in line:
+                            found_line = i + 1
                             break
-            
-            if local_path:
-                try:
-                    with open(local_path, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                        
-                    found_line = None
+                
+                # Strategy 2: Search for target method call
+                if not found_line and target_method:
+                    # Extract simple method name: com.example.Class.method(args) -> method
+                    simple_method = target_method.split('(')[0].split('.')[-1]
+                    for i, line in enumerate(lines):
+                        if simple_method in line and '(' in line:
+                            found_line = i + 1
+                            break
+                
+                # 决定使用哪个行号
+                if found_line:
+                    # 检查 AI 返回的行号是否有效
+                    ai_line_valid = ai_line_num and str(ai_line_num).strip() not in ['无', 'N/A', '0', '-', '']
                     
-                    # Strategy 1: Search for snippet
-                    if call_snippet and call_snippet not in ['无', 'N/A']:
-                        clean_snippet = call_snippet.strip().replace(';', '')
-                        for i, line in enumerate(lines):
-                            if clean_snippet in line:
-                                found_line = i + 1
-                                break
-                    
-                    # Strategy 2: Search for target method call
-                    if not found_line and target_method:
-                        # Extract simple method name: com.example.Class.method(args) -> method
-                        simple_method = target_method.split('(')[0].split('.')[-1]
-                        for i, line in enumerate(lines):
-                            if simple_method in line and '(' in line:
-                                found_line = i + 1
-                                # Heuristic: if line also contains variable name from caller_class, better
-                                break
-                    
-                    if found_line:
+                    if ai_line_valid:
+                        try:
+                            ai_line_int = int(ai_line_num)
+                            if ai_line_int != found_line:
+                                # AI 返回的行号和搜索到的不一致，使用搜索到的
+                                dep['line_number'] = found_line
+                                console.print(
+                                    f"[Corrected] {os.path.basename(local_path)}: AI={ai_line_int} -> Actual={found_line}", 
+                                    style="yellow"
+                                )
+                            else:
+                                # 行号一致，验证通过
+                                console.print(
+                                    f"[Verified] {os.path.basename(local_path)}: Line {found_line} ✓", 
+                                    style="green"
+                                )
+                        except (ValueError, TypeError):
+                            # AI 返回的不是有效数字，使用搜索到的
+                            dep['line_number'] = found_line
+                            console.print(
+                                f"[Fixed] {os.path.basename(local_path)}: Invalid AI line -> {found_line}", 
+                                style="yellow"
+                            )
+                    else:
+                        # AI 没有返回有效行号，使用搜索到的
                         dep['line_number'] = found_line
-                        console.print(f"[Success] Refined line number for {os.path.basename(local_path)}: {found_line}", style="green")
-                        
-                        # Also refine snippet if empty
-                        if not call_snippet or call_snippet in ['无', 'N/A']:
-                            dep['call_snippet'] = lines[found_line-1].strip()
+                        console.print(
+                            f"[Added] {os.path.basename(local_path)}: Line {found_line}", 
+                            style="green"
+                        )
+                    
+                    # 如果 call_snippet 为空，补充代码片段
+                    if not call_snippet or call_snippet in ['无', 'N/A', '']:
+                        dep['call_snippet'] = lines[found_line-1].strip()
+                else:
+                    # 搜索不到，保留 AI 返回的行号
+                    if ai_line_num and str(ai_line_num).strip() not in ['无', 'N/A', '0', '-', '']:
+                        console.print(
+                            f"[Kept] {os.path.basename(local_path)}: Using AI line {ai_line_num} (search failed)", 
+                            style="dim"
+                        )
 
-                except Exception as e:
-                    console.print(f"[Warning] Failed to refine {file_path}: {e}", style="yellow")
+            except Exception as e:
+                console.print(f"[Warning] Failed to verify {file_path}: {e}", style="yellow")
 
     return report
 

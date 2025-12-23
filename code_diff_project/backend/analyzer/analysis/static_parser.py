@@ -132,19 +132,31 @@ class LightStaticAnalyzer:
                                 # 假设第一级目录是服务名
                                 service_name = rel_path.split(os.sep)[0]
                                 
-                                # Extract snippet - Scan whole file to find best usage (Method Call > Declaration > Import)
-                                snippet = ""
-                                line_num = 0
-                                best_score = -1
-                                
+                                # Extract ALL usages - Scan whole file to find all usage locations
                                 lines = content.splitlines()
                                 target_simple = target_full_class_name.split('.')[-1]
                                 # Heuristic: Also search for camelCase variable name (e.g. PointManager -> pointManager)
                                 target_var = target_simple[0].lower() + target_simple[1:] if target_simple else ""
 
+                                # 收集所有匹配的行
+                                matched_lines = []
+                                
                                 for i, line in enumerate(lines):
-                                    current_score = 0
                                     clean_line = line.strip()
+                                    
+                                    # Skip comment lines - Enhanced detection
+                                    # 1. Single line comments: // ...
+                                    # 2. Multi-line comment content: * ... or /* ... or */ or /**
+                                    # 3. Javadoc: /** ... */
+                                    if (clean_line.startswith('//') or 
+                                        clean_line.startswith('*') or 
+                                        clean_line.startswith('/*') or
+                                        clean_line.startswith('*/') or
+                                        clean_line == '/**' or
+                                        clean_line == '*/' or
+                                        (clean_line.startswith('*') and not clean_line.startswith('*/'))):
+                                        logger.debug(f"Skipping comment line {i+1}: {clean_line[:50]}")
+                                        continue
                                     
                                     # Check if this line is relevant
                                     is_match = False
@@ -158,8 +170,11 @@ class LightStaticAnalyzer:
                                     elif target_var and target_var in line: is_match = True
                                     
                                     if not is_match: continue
+                                    
+                                    logger.debug(f"Found match at line {i+1}: {clean_line[:50]}")
 
                                     # Score the match
+                                    current_score = 0
                                     if clean_line.startswith("import "):
                                         current_score = 0
                                     elif clean_line.startswith(("private ", "public ", "protected ", "@")):
@@ -170,27 +185,34 @@ class LightStaticAnalyzer:
                                     else:
                                         current_score = 2
                                     
-                                    # Update best if better
-                                    if current_score > best_score:
-                                        best_score = current_score
-                                        snippet = clean_line
-                                        line_num = i + 1
-                                        # If we found a call, that's usually good enough, but let's see if we can find more?
-                                        # No, sticking to first "Call" found is fine.
-                                        if current_score == 10: break
+                                    # 收集所有非 import 的匹配行（import 行分数为0，我们跳过它）
+                                    if current_score > 0:
+                                        matched_lines.append({
+                                            "line_num": i + 1,
+                                            "snippet": clean_line,
+                                            "score": current_score
+                                        })
 
-                                if not snippet:
-                                    snippet = f"Detected by Static Analysis ({found_type})"
-
-                                usages.append({
-                                    "path": rel_path,
-                                    "service": service_name,
-                                    "type": found_type,
-                                    "file_name": file,
-                                    "snippet": snippet,
-                                    "line": line_num
-                                })
-                                logger.success(f"-> Found usage ({found_type}) in: {rel_path} (Service: {service_name})")
+                                # 如果没有找到任何匹配（除了import），添加一个默认记录
+                                if not matched_lines:
+                                    matched_lines.append({
+                                        "line_num": 0,
+                                        "snippet": f"Detected by Static Analysis ({found_type})",
+                                        "score": 0
+                                    })
+                                
+                                # 为每个匹配的行创建一个 usage 记录
+                                for match in matched_lines:
+                                    usages.append({
+                                        "path": rel_path,
+                                        "service": service_name,
+                                        "type": found_type,
+                                        "file_name": file,
+                                        "snippet": match["snippet"],
+                                        "line": match["line_num"]
+                                    })
+                                
+                                logger.success(f"-> Found {len(matched_lines)} usage(s) ({found_type}) in: {rel_path} (Service: {service_name})")
 
                     except:
                         continue

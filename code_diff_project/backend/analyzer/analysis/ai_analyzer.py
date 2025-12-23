@@ -3,6 +3,7 @@ import json
 import re
 import time
 import requests
+from django.conf import settings
 from rich.console import Console
 from rich.panel import Panel
 from .static_parser import LightStaticAnalyzer
@@ -11,10 +12,155 @@ from loguru import logger
 
 console = Console()
 
-# --- DeepSeek API 配置 ---
-DEEPSEEK_API_KEY = "sk-zsoEsAP0th0QH55v22p9JMaedIsbWVe6FjYZ2Rnywua6hcfI"
-DEEPSEEK_API_URL = "https://api.chataiapi.com/v1/chat/completions"
-DEEPSEEK_MODEL = "gemini-2.5-flash"
+# --- DeepSeek API 配置 (从 Django settings 读取) ---
+DEEPSEEK_API_KEY = getattr(settings, 'DEEPSEEK_API_KEY', '')
+DEEPSEEK_API_URL = getattr(settings, 'DEEPSEEK_API_URL', 'https://api.chataiapi.com/v1/chat/completions')
+DEEPSEEK_MODEL = getattr(settings, 'DEEPSEEK_MODEL', 'gemini-2.5-flash')
+
+
+def merge_downstream_line_numbers(report_json, cross_project_impacts):
+    """
+    合并 downstream_dependency 中同一文件的多个行号，并去除重复记录
+    同时合并所有代码片段，包含上下文代码
+    
+    参数:
+        report_json: AI 返回的报告 JSON
+        cross_project_impacts: 跨项目影响原始数据列表
+    
+    返回:
+        更新后的 report_json
+    """
+    if not report_json or 'downstream_dependency' not in report_json:
+        return report_json
+    
+    if not cross_project_impacts:
+        return report_json
+    
+    # 按文件路径分组 cross_project_impacts
+    impacts_by_file = {}
+    for impact in cross_project_impacts:
+        file_path = impact.get('file', '')
+        if file_path:
+            if file_path not in impacts_by_file:
+                impacts_by_file[file_path] = []
+            impacts_by_file[file_path].append(impact)
+    
+    # 按文件路径分组 downstream_dependency，并合并同一文件的记录
+    dependencies = report_json.get('downstream_dependency', [])
+    merged_dependencies = {}
+    
+    for dep in dependencies:
+        file_path = dep.get('file_path', '')
+        
+        # 如果这个文件已经处理过，跳过（去重）
+        if file_path in merged_dependencies:
+            continue
+        
+        # 尝试匹配文件路径（可能是部分路径）
+        matched_impacts = []
+        matched_full_path = None
+        for full_path, impacts in impacts_by_file.items():
+            if file_path in full_path or full_path.endswith(file_path):
+                matched_impacts = impacts
+                matched_full_path = full_path
+                break
+        
+        if matched_impacts:
+            # 收集所有行号和代码片段（包含上下文）
+            line_numbers = []
+            snippets = []
+            
+            # 读取文件内容以获取上下文
+            file_content_lines = None
+            if matched_full_path:
+                # 尝试从多个可能的位置读取文件
+                from pathlib import Path
+                possible_paths = [
+                    Path(matched_full_path),
+                    Path('code_diff_project/workspace') / matched_full_path,
+                    Path('workspace') / matched_full_path
+                ]
+                
+                for path in possible_paths:
+                    if path.exists():
+                        try:
+                            with open(path, 'r', encoding='utf-8') as f:
+                                file_content_lines = f.readlines()
+                            logger.info(f"成功读取文件: {path}")
+                            break
+                        except Exception as e:
+                            logger.warning(f"读取文件失败 {path}: {e}")
+                            continue
+            
+            for impact in matched_impacts:
+                line_num = impact.get('line', 0)
+                if line_num and line_num not in line_numbers:
+                    line_numbers.append(line_num)
+                    
+                    # 如果能读取文件，构建结构化的上下文数据
+                    if file_content_lines:
+                        context_data = {
+                            'target_line': line_num,
+                            'target_code': file_content_lines[line_num - 1].rstrip() if line_num <= len(file_content_lines) else '',
+                            'context_before': [],
+                            'context_after': []
+                        }
+                        
+                        # 上2行
+                        start_line = max(0, line_num - 3)
+                        for i in range(start_line, line_num - 1):
+                            if i < len(file_content_lines):
+                                context_data['context_before'].append({
+                                    'line': i + 1,
+                                    'code': file_content_lines[i].rstrip()
+                                })
+                        
+                        # 下2行
+                        end_line = min(len(file_content_lines), line_num + 2)
+                        for i in range(line_num, end_line):
+                            if i < len(file_content_lines):
+                                context_data['context_after'].append({
+                                    'line': i + 1,
+                                    'code': file_content_lines[i].rstrip()
+                                })
+                        
+                        logger.info(f"生成上下文数据 - 行号: {line_num}, 上文: {len(context_data['context_before'])} 行, 下文: {len(context_data['context_after'])} 行")
+                        snippets.append(context_data)
+                    else:
+                        # 如果无法读取文件，使用原始片段（兼容旧格式）
+                        snippet = impact.get('snippet', '')
+                        if snippet:
+                            logger.info(f"使用原始片段 - 行号: {line_num}")
+                            snippets.append({
+                                'target_line': line_num,
+                                'target_code': snippet,
+                                'context_before': [],
+                                'context_after': []
+                            })
+            
+            # 按行号排序
+            line_numbers.sort()
+            
+            # 更新行号字段，格式：20 25（用空格分隔，不加 "Line:" 前缀）
+            if line_numbers:
+                dep['line_number'] = ' '.join([str(ln) for ln in line_numbers])
+                logger.info(f"合并行号: {file_path} -> {dep['line_number']}")
+            
+            # 更新代码片段字段，存储结构化数据
+            if snippets:
+                # 将结构化数据存储（不需要转换为 JSON 字符串，直接存储列表）
+                dep['call_snippet_data'] = snippets
+                logger.info(f"合并代码片段（结构化）: {file_path} -> {len(snippets)} 个片段")
+                logger.debug(f"片段数据: {snippets}")
+        
+        # 保存到合并后的字典中（去重）
+        merged_dependencies[file_path] = dep
+    
+    # 将合并后的依赖列表替换原来的列表
+    report_json['downstream_dependency'] = list(merged_dependencies.values())
+    logger.info(f"去重后的依赖数量: {len(merged_dependencies)} (原始: {len(dependencies)})")
+    
+    return report_json
 
 
 def format_cross_project_impacts(impacts):
@@ -37,57 +183,93 @@ def format_cross_project_impacts(impacts):
     if not impacts:
         return "未检测到跨项目影响。"
     
-    # 按项目分组影响
+    # 按项目和文件分组影响
     impacts_by_project = {}
     for impact in impacts:
         project = impact.get('project', 'Unknown')
         if project not in impacts_by_project:
             impacts_by_project[project] = {
-                'class_references': [],
-                'api_calls': []
+                'class_references': {},  # 改为字典，按文件分组
+                'api_calls': {}          # 改为字典，按文件分组
             }
         
         impact_type = impact.get('type', 'unknown')
+        file_path = impact.get('file', 'Unknown')
+        
         if impact_type == 'class_reference':
-            impacts_by_project[project]['class_references'].append(impact)
+            if file_path not in impacts_by_project[project]['class_references']:
+                impacts_by_project[project]['class_references'][file_path] = []
+            impacts_by_project[project]['class_references'][file_path].append(impact)
         elif impact_type == 'api_call':
-            impacts_by_project[project]['api_calls'].append(impact)
+            if file_path not in impacts_by_project[project]['api_calls']:
+                impacts_by_project[project]['api_calls'][file_path] = []
+            impacts_by_project[project]['api_calls'][file_path].append(impact)
+    
+    # 计算总影响数（按文件去重后）
+    total_files = 0
+    for project_impacts in impacts_by_project.values():
+        total_files += len(project_impacts['class_references'])
+        total_files += len(project_impacts['api_calls'])
     
     # 格式化为人类可读的文本
     lines = []
     lines.append("=" * 80)
     lines.append("跨项目影响分析结果")
     lines.append("=" * 80)
-    lines.append(f"总计发现 {len(impacts)} 个跨项目影响，涉及 {len(impacts_by_project)} 个项目")
+    lines.append(f"总计发现 {total_files} 个受影响文件，涉及 {len(impacts_by_project)} 个项目")
     lines.append("")
     
     for project_name, project_impacts in impacts_by_project.items():
-        class_refs = project_impacts['class_references']
-        api_calls = project_impacts['api_calls']
+        class_refs_by_file = project_impacts['class_references']
+        api_calls_by_file = project_impacts['api_calls']
         
         lines.append(f"【项目】{project_name}")
-        lines.append(f"  类引用: {len(class_refs)} 个 | API 调用: {len(api_calls)} 个")
+        lines.append(f"  类引用: {len(class_refs_by_file)} 个文件 | API 调用: {len(api_calls_by_file)} 个文件")
         lines.append("")
         
-        # 格式化类引用
-        if class_refs:
+        # 格式化类引用（按文件分组）
+        if class_refs_by_file:
             lines.append("  ▶ 类引用:")
-            for i, ref in enumerate(class_refs, 1):
-                lines.append(f"    {i}. 文件: {ref.get('file', 'Unknown')}")
-                lines.append(f"       行号: {ref.get('line', 'N/A')}")
-                lines.append(f"       代码: {ref.get('snippet', 'N/A')}")
-                lines.append(f"       说明: {ref.get('detail', 'N/A')}")
+            for file_idx, (file_path, refs) in enumerate(class_refs_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有行号和代码片段
+                usage_details = []
+                for ref in refs:
+                    line_num = ref.get('line', 'N/A')
+                    snippet = ref.get('snippet', 'N/A')
+                    usage_details.append(f"L{line_num}: {snippet}")
+                
+                # 显示所有使用位置
+                lines.append(f"       使用位置: {len(refs)} 处")
+                for detail in usage_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个引用的说明
+                lines.append(f"       说明: {refs[0].get('detail', 'N/A')}")
                 lines.append("")
         
-        # 格式化 API 调用
-        if api_calls:
+        # 格式化 API 调用（按文件分组）
+        if api_calls_by_file:
             lines.append("  ▶ API 调用:")
-            for i, call in enumerate(api_calls, 1):
-                lines.append(f"    {i}. API: {call.get('api', 'Unknown')}")
-                lines.append(f"       文件: {call.get('file', 'Unknown')}")
-                lines.append(f"       行号: {call.get('line', 'N/A')}")
-                lines.append(f"       代码: {call.get('snippet', 'N/A')}")
-                lines.append(f"       说明: {call.get('detail', 'N/A')}")
+            for file_idx, (file_path, calls) in enumerate(api_calls_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有 API 和调用位置
+                api_details = []
+                for call in calls:
+                    api = call.get('api', 'Unknown')
+                    line_num = call.get('line', 'N/A')
+                    snippet = call.get('snippet', 'N/A')
+                    api_details.append(f"{api} @ L{line_num}: {snippet}")
+                
+                # 显示所有 API 调用
+                lines.append(f"       调用位置: {len(calls)} 处")
+                for detail in api_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个调用的说明
+                lines.append(f"       说明: {calls[0].get('detail', 'N/A')}")
                 lines.append("")
         
         lines.append("-" * 80)
@@ -525,10 +707,82 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     请重点关注这些 API 的回归测试。
     
     {controller_params_info}
-    **关键指令**：
-    1. 在编写 [test_strategy] 的 [steps] 时，如果上述列表中存在有效的 API 路径，**必须**直接使用该真实路径（例如 `POST /ucenter/user/compensate`），**严禁**使用 `/api/v1/example` 等假设性路径。
-    2. **特别重要**：如果本次变更是内部方法（Service/Manager/Mapper，没有 @RequestMapping），上述列表中的 API 路径就是测试该变更的**唯一入口**。测试策略的 Payload 必须基于这些 Controller 接口的参数，而不是内部方法的参数。
-    3. 示例：如果变更 `UserService.getUserById(Long id)`（内部方法），且上述列表显示 `GET /api/user/info` 调用了它，则 Payload 必须使用 `GET /api/user/info` 的参数（如 `?userId=456`），而不是 `UserService` 方法的参数（如 `{{"id": 123}}`）。
+    
+    ## 参数提取规则（严格遵守，按优先级执行）
+    
+    ### 优先级 1：从 Git Diff 中提取（如果 Controller 代码在本次变更中）
+    1. 定位到 Controller 方法（带有 @GetMapping/@PostMapping/@PutMapping/@DeleteMapping 注解）
+    2. 提取方法参数及其注解：
+       - `@PathVariable`：参数在 URL 路径中（如 `/{{orderId}}`）
+       - `@RequestParam`：参数通过 Query String 或 Form Data 传递
+       - `@RequestBody`：参数通过 JSON Body 传递
+    3. **严禁**从 Service 层或其他非 Controller 方法推断参数
+    
+    ### 优先级 2：使用系统提供的参数信息（如果 Controller 代码不在 Diff 中）
+    1. 检查上述 "Controller 参数信息" 部分是否存在
+    2. 如果有，**必须直接使用**其中的参数名和类型，**严禁**修改或推测
+    3. 如果没有，执行优先级 3
+    
+    ### 优先级 3：从 [Deep API Trace] 推断（如果系统未提供参数信息）
+    1. 查看 [Deep API Trace] 中提到的 Controller 文件路径
+    2. 从调用链信息推断 Controller 类和方法
+    3. 如果确实无法确定参数，Payload 标注为："参数待确认（建议查看 Controller 代码）"
+    
+    ### 关键约束
+    1. **严禁**从 Service/Manager/Mapper 层方法推断 Controller 参数
+    2. **严禁**编造不存在的参数
+    3. **严禁**混淆 @PathVariable 和 @RequestParam
+    4. 如果方法没有 @RequestParam 或 @RequestBody 参数，Payload 留空或标注"无参数"
+    
+    ### 示例
+    - ✅ 正确：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId` → Payload: 无（orderId 已在 URL 中）
+    - ❌ 错误：从 `createOrder(Long userId, String productName, BigDecimal amount)` 推断 `getOrder` 的参数
+    
+    ## 参数格式规范（严格遵守）
+    
+    ### 规则 1：@PathVariable（路径参数）
+    - **定义**：参数在 URL 路径中（如 `/{{orderId}}`）
+    - **Payload**：无（参数已在 URL 中，不需要在 Payload 中重复）
+    - **示例**：
+      - 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+      - URL：`GET /api/orders/123`
+      - Payload：无
+    
+    ### 规则 2：@RequestParam（查询参数）
+    - **定义**：参数通过 Query String 或 Form Data 传递
+    - **适用于**：所有 HTTP 方法（GET/POST/PUT/DELETE）
+    - **Payload 格式**：`?key1=value1&key2=value2`
+    - **示例**：
+      - 代码：`@GetMapping("/status")` + `@RequestParam String orderId`
+      - URL：`GET /api/orders/status?orderId=12345`
+      - Payload：`?orderId=12345`
+      
+      - 代码：`@PostMapping("/order")` + `@RequestParam Long userId, @RequestParam String orderNumber`
+      - URL：`POST /api/notifications/order?userId=789&orderNumber=ORD-12345`
+      - Payload：`?userId=789&orderNumber=ORD-12345`
+    
+    ### 规则 3：@RequestBody（请求体参数）
+    - **定义**：参数通过 JSON Body 传递
+    - **适用于**：POST/PUT 方法
+    - **Payload 格式**：`{{"key1": "value1", "key2": "value2"}}`
+    - **示例**：
+      - 代码：`@PostMapping("/create")` + `@RequestBody OrderDTO dto`
+      - URL：`POST /api/orders/create`
+      - Payload：`{{"userId": 123, "productName": "Product A", "amount": 100.00}}`
+    
+    ### 规则 4：混合参数
+    - **定义**：同时使用 @PathVariable、@RequestParam、@RequestBody
+    - **示例**：
+      - 代码：`@PutMapping("/{{orderId}}/status")` + `@PathVariable Long orderId, @RequestParam Integer status`
+      - URL：`PUT /api/orders/123/status?status=1`
+      - Payload：`?status=1`（orderId 已在 URL 中）
+    
+    ### 关键约束
+    1. **@PathVariable 不需要在 Payload 中重复**
+    2. **@RequestParam 始终使用 Query String 格式**（无论 GET/POST/PUT/DELETE）
+    3. **@RequestBody 始终使用 JSON Body 格式**（仅 POST/PUT）
+    4. **严禁**将 @RequestParam 误写为 JSON Body 格式
+    5. **严禁**将 @RequestBody 误写为 Query String 格式
 
     # Context
     这是一个基于 Spring Cloud 的微服务项目 (Monorepo)。
@@ -561,6 +815,122 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     
     禁止使用"可能"、"如果"等模棱两可的词汇，必须使用"确定"、"必挂"等强语气词汇来警示开发人员。
 
+    ## 代码逻辑分析要求（严格遵守）
+    
+    ### 规则 1：追踪方法调用链
+    1. 对于状态变更类方法（如 updateStatus、cancelOrder、activate），**必须**追踪到最终的状态值
+    2. 示例：
+       - 代码：`cancelOrder(orderId)` → 调用 `updateOrderStatus(orderId, 2)`
+       - 结论：取消状态码是 **2**，不是 0
+    3. 验证点必须基于实际代码逻辑，**严禁**推测
+    
+    ### 规则 2：识别硬编码值
+    1. 如果方法内部硬编码了某些值（如状态码、常量），**必须**提取这些值
+    2. 示例：
+       - 代码：`order.setStatus(1); // 1 = 已支付`
+       - 结论：订单状态码 1 表示"已支付"
+    3. 测试用例的验证点必须使用这些硬编码值
+    
+    ### 规则 3：分析方法参数与内部逻辑的关系
+    1. 如果方法没有某个参数，**严禁**在 Payload 中添加该参数
+    2. 示例：
+       - 代码：`cancelOrder(Long orderId)` → 内部调用 `updateOrderStatus(orderId, 2)`
+       - 结论：`cancelOrder` 方法不需要 `status` 参数，状态码由方法内部决定
+    3. Payload 只包含方法签名中的参数
+    
+    ### 规则 4：识别业务规则变更
+    1. 对比 Git Diff 中的 `+` 和 `-` 行，识别业务规则的变更
+    2. 示例：
+       - 变更前：`order.setStatus(0);`
+       - 变更后：`order.setStatus(1);`
+       - 结论：订单默认状态从"待支付"改为"已支付"
+    3. 测试用例必须覆盖这些业务规则变更
+    
+    ### 关键约束
+    1. **严禁**仅根据方法名推测逻辑（如看到 `cancelOrder` 就认为状态码是 0）
+    2. **必须**追踪方法调用链，找到最终的状态值
+    3. **必须**提取硬编码值，用于测试验证点
+    
+    ## 方法重载识别规则（严格遵守）
+    
+    ### 规则 1：识别重载方法
+    1. 如果同一个类中存在多个同名方法（参数不同），这些方法是**重载方法**
+    2. 示例：
+       ```java
+       // 方法 1
+       public String sendOrderNotification(Long userId, String orderNumber) {{
+           // 只调用 getUserById
+       }}
+       
+       // 方法 2（重载）
+       public String sendOrderNotification(Long orderId) {{
+           // 调用 getOrderById ✓
+       }}
+       ```
+    3. **必须**识别每个重载方法的实现逻辑，选择正确的方法进行测试
+    
+    ### 规则 2：选择正确的重载方法
+    1. 根据测试目标，选择能触发目标逻辑的重载方法
+    2. 示例：
+       - 测试目标：验证 `getOrderById` 方法的兼容性
+       - 正确选择：`sendOrderNotification(Long orderId)`（会调用 `getOrderById`）
+       - 错误选择：`sendOrderNotification(Long userId, String orderNumber)`（不会调用 `getOrderById`）
+    
+    ### 规则 3：匹配 HTTP 接口与重载方法
+    1. 如果重载方法有对应的 HTTP 接口，使用 HTTP 接口测试
+    2. 如果重载方法没有对应的 HTTP 接口，使用单元测试
+    3. 示例：
+       - `sendOrderNotification(Long userId, String orderNumber)` → 有接口：`POST /api/notifications/order`
+       - `sendOrderNotification(Long orderId)` → 无接口 → 使用单元测试
+    
+    ### 规则 4：明确说明测试方式
+    1. 如果使用 HTTP 接口测试，提供完整的 URL、HTTP 方法、Payload
+    2. 如果使用单元测试，提供 Java 方法调用示例
+    3. 示例：
+       - HTTP 接口测试：`POST /api/notifications/order?userId=789&orderNumber=ORD-12345`
+       - 单元测试：`notificationService.sendOrderNotification(123L)`
+    
+    ### 关键约束
+    1. **严禁**混淆不同的重载方法
+    2. **必须**根据测试目标选择正确的重载方法
+    3. **必须**明确说明测试方式（HTTP 接口 vs 单元测试）
+    
+    ## 跨服务测试路径生成规则（严格遵守）
+    
+    ### 规则 1：验证 HTTP 接口是否存在
+    1. 在生成测试用例前，**必须**验证目标 HTTP 接口是否存在
+    2. 验证方法：
+       - 检查 Controller 类中是否有对应的 @GetMapping/@PostMapping/@PutMapping/@DeleteMapping 注解
+       - 检查方法签名是否匹配
+    3. 如果接口不存在，**严禁**编造接口
+    
+    ### 规则 2：处理没有 HTTP 接口的内部方法
+    1. 如果目标方法没有对应的 HTTP 接口（如 Service/Manager 层方法），使用以下测试方式：
+       - **方式 1（推荐）**：单元测试（直接调用 Java 方法）
+       - **方式 2**：集成测试（通过调用链上游的 HTTP 接口触发）
+    2. 示例：
+       - 目标方法：`NotificationService.sendOrderNotification(Long orderId)`（无 HTTP 接口）
+       - 方式 1：单元测试 `notificationService.sendOrderNotification(123L)`
+       - 方式 2：如果有上游接口调用此方法，通过上游接口触发
+    
+    ### 规则 3：跨服务测试的特殊处理
+    1. 如果测试目标是验证跨服务调用的兼容性，**必须**选择能触发跨服务调用的方法
+    2. 示例：
+       - 测试目标：验证 service-b 能正确调用 service-a 的 `getOrderById` 方法
+       - 正确选择：`sendOrderNotification(Long orderId)`（会调用 `userClient.getOrderById`）
+       - 错误选择：`sendOrderNotification(Long userId, String orderNumber)`（不会调用 `getOrderById`）
+    
+    ### 规则 4：明确测试步骤
+    1. 对于单元测试，提供 Java 方法调用示例
+    2. 对于集成测试，提供完整的 HTTP 接口调用步骤
+    3. 对于跨服务测试，说明调用链路（如 service-b → service-a）
+    
+    ### 关键约束
+    1. **严禁**编造不存在的 HTTP 接口
+    2. **必须**验证接口是否存在
+    3. **必须**根据方法是否有 HTTP 接口选择测试方式（HTTP 接口 vs 单元测试）
+    4. **必须**明确说明测试步骤和调用链路
+    
     ## 核心规则（必须严格遵守）
     1. 分析"跨服务影响"时，**仅基于** `Cross-Service Impact` 列表中的服务，禁止扩展至列表外的服务；
     2. 严禁混淆「上游依赖」和「下游受影响方」：
@@ -666,34 +1036,60 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
            - **严禁**根据接口路径（如 `/api/user/info` → `userId`）或业务语义推测参数名
            - **严禁**编造不存在的参数名，如果代码中没有明确参数，则标注为"无参数"或"参数待确认"
         
-        2. **参数格式必须与 HTTP 方法匹配**：
-           - **GET/DELETE 请求**：
+        2. **参数格式必须与 HTTP 方法和注解匹配**：
+           - **@PathVariable**：
+             * 参数在 URL 路径中（如 `/api/orders/{{orderId}}`）
+             * Payload：无（参数已在 URL 中）
+             * 测试步骤：`调用 GET /api/orders/123`
+             * ❌ 错误：`?orderId=123`（不应使用 Query String）
+             * ✅ 正确：URL 中直接包含 `123`
+           
+           - **@RequestParam + GET/DELETE 请求**：
              * 参数通过 **URL Query String** 传递
              * Payload 格式：`?orderId=12345` 或 `?userId=100&status=active`
              * 测试步骤：`调用 GET /api/path?orderId=12345`
              * ❌ 错误：`{{"orderId": "12345"}}`（JSON Body 格式）
              * ✅ 正确：`?orderId=12345`（Query String 格式）
          
-           - **POST/PUT 请求**：
-             * 如果使用 `@RequestParam`：参数通过 **Query String** 或 **Form Data** 传递
-             * 如果使用 `@RequestBody`：参数通过 **JSON Body** 传递
-             * Payload 格式：
-               - `@RequestParam` → `?key=value` 或 Form Data
-               - `@RequestBody` → `{{"key": "value"}}`（JSON 对象）
+           - **@RequestParam + POST/PUT 请求**：
+             * 参数通过 **URL Query String** 或 **Form Data** 传递（不是 JSON Body）
+             * Payload 格式：`?key=value` 或 Form Data
+             * 测试步骤：`调用 POST /api/path?orderId=12345`
+             * ❌ 错误：`{{"orderId": "12345"}}`（JSON Body 格式）
+             * ✅ 正确：`?orderId=12345`（Query String 格式）
+           
+           - **@RequestBody + POST/PUT 请求**：
+             * 参数通过 **JSON Body** 传递
+             * Payload 格式：`{{"key": "value"}}`（JSON 对象）
              * 测试步骤：`调用 POST /api/path，Body 为 {{"orderId": "12345"}}`
+             * ❌ 错误：`?orderId=12345`（Query String 格式）
+             * ✅ 正确：`{{"orderId": "12345"}}`（JSON Body 格式）
         
         3. **Payload 示例格式规范**：
-           - GET/DELETE + `@RequestParam` → `?paramName=value`（Query String）
-           - POST/PUT + `@RequestParam` → `?paramName=value` 或 Form Data
-           - POST/PUT + `@RequestBody` → `{{"fieldName": "value"}}`（JSON 对象）
+           - @PathVariable → 无 Payload（参数在 URL 路径中）
+           - GET/DELETE + @RequestParam → `?paramName=value`（Query String）
+           - POST/PUT + @RequestParam → `?paramName=value`（Query String，不是 JSON Body）
+           - POST/PUT + @RequestBody → `{{"fieldName": "value"}}`（JSON 对象）
            - 必须标注必填/选填：`{{"orderId": "12345" (必填, 示例值)}}`
-           - 如果参数在 URL 路径中（`@PathVariable`），在 steps 中说明，payload 中不重复
+           - 如果参数在 URL 路径中（@PathVariable），在 steps 中说明，payload 中不重复
         
         4. **验证示例**：
-           - 代码：`@GetMapping("/status") public Result checkStatus(@RequestParam String orderId)`
+           - 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+           - ✅ 正确 URL：`GET /api/orders/123`
+           - ✅ 正确 Payload：无
+           - ❌ 错误 Payload：`?orderId=123`（@PathVariable 不需要 Query String）
+           
+           - 代码：`@GetMapping("/status")` + `@RequestParam String orderId`
            - ✅ 正确 Payload：`?orderId=12345`（Query String）
-           - ❌ 错误 Payload：`{{"rechargeId": "12345"}}`（参数名错误 + 格式错误）
-           - ✅ 正确步骤：`调用 GET /api/status?orderId=12345`
+           - ❌ 错误 Payload：`{{"orderId": "12345"}}`（GET 请求不应使用 JSON Body）
+           
+           - 代码：`@PostMapping("/order")` + `@RequestParam Long userId, @RequestParam String orderNumber`
+           - ✅ 正确 Payload：`?userId=789&orderNumber=ORD-12345`（Query String）
+           - ❌ 错误 Payload：`{{"userId": 789, "orderNumber": "ORD-12345"}}`（@RequestParam 不使用 JSON Body）
+           
+           - 代码：`@PostMapping("/create")` + `@RequestBody OrderDTO dto`
+           - ✅ 正确 Payload：`{{"userId": 123, "amount": 100.00}}`（JSON Body）
+           - ❌ 错误 Payload：`?userId=123&amount=100.00`（@RequestBody 不使用 Query String）
 
     ## 禁止示例（以下回答无效）
     1. functional_impact 字段为字符串："functional_impact": "修改了转账逻辑，可能影响用户系统"；
@@ -701,17 +1097,55 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     3. risks 泛泛而谈："风险：可能影响数据一致性"；
     4. business_rules 笼统描述："修改了积分规则"（必须写出具体规则，如"积分获取上限从 1000 调整为 5000"）；
     5. 编造不存在的服务名称："service_name": "PaymentService"（不在项目服务列表中）；
-    6. **参数名错误**：
+    6. **参数提取错误**：
+       - 从 Service 层推断 Controller 参数：
+         * 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+         * ❌ 错误：从 `createOrder(Long userId, String productName, BigDecimal amount)` 推断出 `?userId=456&productName=SampleProduct&amount=100.00`
+         * ✅ 正确：无 Payload（orderId 已在 URL 中）
+    
+    7. **参数格式错误**：
+       - @PathVariable 误用 Query String：
+         * 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+         * ❌ 错误 Payload：`?orderId=123`
+         * ✅ 正确：无 Payload（参数在 URL 中：`/api/orders/123`）
+       
+       - @RequestParam 误用 JSON Body：
+         * 代码：`@PostMapping("/order")` + `@RequestParam Long userId, @RequestParam String orderNumber`
+         * ❌ 错误 Payload：`{{"userId": 789, "orderNumber": "ORD-12345"}}`
+         * ✅ 正确 Payload：`?userId=789&orderNumber=ORD-12345`
+       
+       - @RequestBody 误用 Query String：
+         * 代码：`@PostMapping("/create")` + `@RequestBody OrderDTO dto`
+         * ❌ 错误 Payload：`?userId=123&amount=100.00`
+         * ✅ 正确 Payload：`{{"userId": 123, "amount": 100.00}}`
+    
+    8. **参数名错误**：
        - 代码：`@RequestParam String orderId` → ❌ 错误 Payload：`{{"rechargeId": "12345"}}`（参数名错误）
        - 代码：`@GetMapping("/status")` + `@RequestParam String orderId` → ❌ 错误 Payload：`{{"orderId": "12345"}}`（GET 请求不应使用 JSON Body，应使用 Query String：`?orderId=12345`）
        - ✅ 正确：从代码中提取准确参数名 `orderId`，GET 请求使用 `?orderId=12345` 格式。
     
-    7. **内部方法变更时使用错误的参数**：
+    9. **内部方法变更时使用错误的参数**：
        - 变更：`UserService.getUserById(Long id)`（内部方法，无 HTTP 接口）
        - [Deep API Trace] 发现：`GET /api/user/info` 调用了此方法
        - Controller：`@GetMapping("/api/user/info") public Result getUserInfo(@RequestParam String userId)`
        - ❌ 错误 Payload：`{{"id": 123}}`（使用了内部方法的参数 `id`，而不是 Controller 的参数 `userId`）
        - ✅ 正确 Payload：`?userId=456`（使用 Controller 接口的参数 `userId`）
+    
+    10. **代码逻辑分析错误**：
+        - 代码：`cancelOrder(orderId)` → 调用 `updateOrderStatus(orderId, 2)`
+        - ❌ 错误验证点：`验证订单状态已更新为 0 (取消)`
+        - ✅ 正确验证点：`验证订单状态已更新为 2 (已取消)`
+    
+    11. **方法重载识别错误**：
+        - 测试目标：验证 `getOrderById` 方法的兼容性
+        - 方法 1：`sendOrderNotification(Long userId, String orderNumber)` → 不会调用 `getOrderById`
+        - 方法 2：`sendOrderNotification(Long orderId)` → 会调用 `getOrderById` ✓
+        - ❌ 错误选择：使用方法 1 进行测试
+        - ✅ 正确选择：使用方法 2 进行测试
+    
+    12. **跨服务测试路径错误**：
+        - ❌ 错误：编造不存在的接口 `POST /api/notifications/order-detail`
+        - ✅ 正确：验证接口是否存在，如果不存在则使用单元测试
 
     请严格按照以下 JSON 格式返回（字段不可缺失，值为字符串的需用双引号包裹）：
     {{
@@ -805,6 +1239,9 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
 
         # Post-process refinement
         report_json = refine_report_with_static_analysis(report_json, root_dir)
+        
+        # Merge multiple line numbers for the same file in downstream_dependency
+        report_json = merge_downstream_line_numbers(report_json, cross_project_impacts)
         
         # Inject Usage Info for DB storage
         if usage:

@@ -1,0 +1,71 @@
+/* 确保自动发现配置按钮始终可见 - 使用最强的样式覆盖 */
+.ant-btn-primary {
+    opacity: 1 !important;
+    visibility: visible !important;
+    display: inline-block !important;
+    background-color: #1890ff !important;
+    border-color: #1890ff !important;
+    color: #ffffff !important;
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+    opacity: 1 !important;
+    visibility: visible !important;
+    background-color: #40a9ff !important;
+    border-color: #40a9ff !important;
+    color: #ffffff !important;
+}
+
+/* 针对自动发现页面的按钮容器 */
+.auto-discovery-button-container {
+    opacity: 1 !important;
+    visibility: visible !important;
+    display: block !important;
+    position: relative !important;
+    z-index: 100 !important;
+}
+
+.auto-discovery-button-container button {
+    opacity: 1 !important;
+    visibility: visible !important;
+    display: inline-flex !important;
+}
+
+.auto-discovery-button-container .ant-btn {
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+/* Toast 提示动画 */
+@keyframes slideDown {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-30px) scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
+    }
+}
+
+@keyframes fadeOut {
+    0% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px) scale(0.95);
+    }
+}
+
+/* Toast 提示悬停效果 */
+.toast-message {
+    transition: all 0.3s ease;
+}
+
+.toast-message:hover {
+    transform: translateX(-50%) translateY(-2px) scale(1.02);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25), 0 4px 8px rgba(0,0,0,0.15);
+}
