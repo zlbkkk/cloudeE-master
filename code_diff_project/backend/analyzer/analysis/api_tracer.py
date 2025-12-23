@@ -149,6 +149,7 @@ class ApiUsageTracer:
             caller_file = caller['file']
             caller_class = caller['class']
             caller_method = caller['method']
+            caller_method_signature = caller.get('method_signature', caller_method)  # 新增：获取方法签名
             caller_line = caller.get('line')
             caller_snippet = caller.get('snippet')
             
@@ -163,6 +164,7 @@ class ApiUsageTracer:
                     "api": api_info,
                     "caller_class": caller_class,
                     "caller_method": caller_method,
+                    "method_signature": caller_method_signature,  # 新增：完整方法签名
                     "file": caller_file,
                     "line": caller_line,
                     "snippet": caller_snippet
@@ -236,6 +238,9 @@ class ApiUsageTracer:
         for _, method_node in tree.filter(javalang.tree.MethodDeclaration):
             caller_method_name = method_node.name
             
+            # 提取方法签名（包含参数类型）
+            method_signature = self._extract_method_signature(method_node)
+            
             # Check body for method invocations
             # We look for MethodInvocation nodes where .member == target_method
             for _, invoke_node in method_node.filter(javalang.tree.MethodInvocation):
@@ -248,6 +253,7 @@ class ApiUsageTracer:
                         'file': file_path,
                         'class': current_class_name,
                         'method': caller_method_name,
+                        'method_signature': method_signature,  # 新增：完整方法签名
                         'line': line_num,
                         'snippet': snippet
                     })
@@ -255,6 +261,38 @@ class ApiUsageTracer:
                     # No, keep all calls if we want precise snippets. But for now trace path, one is enough.
                     break 
         return found
+    
+    def _extract_method_signature(self, method_node):
+        """
+        提取方法的完整签名，包含参数类型
+        例如：sendOrderNotification(Long, String)
+        """
+        method_name = method_node.name
+        params = []
+        
+        if method_node.parameters:
+            for param in method_node.parameters:
+                # 获取参数类型
+                if param.type:
+                    param_type = self._get_type_name(param.type)
+                    params.append(param_type)
+        
+        if params:
+            return f"{method_name}({', '.join(params)})"
+        else:
+            return f"{method_name}()"
+    
+    def _get_type_name(self, type_node):
+        """
+        从类型节点中提取类型名称
+        """
+        if hasattr(type_node, 'name'):
+            return type_node.name
+        elif hasattr(type_node, 'type') and hasattr(type_node.type, 'name'):
+            # 处理泛型类型，如 List<String>
+            return type_node.type.name
+        else:
+            return "Unknown"
 
     def _get_controller_api(self, file_path, method_name):
         """

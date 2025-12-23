@@ -170,12 +170,14 @@ def format_cross_project_impacts(impacts):
     参数:
         impacts: 影响字典列表，每个字典包含:
             - project: str (项目名称)
-            - type: str ('class_reference' 或 'api_call')
+            - type: str ('class_reference', 'api_call', 或 'method_call')
             - file: str (文件路径)
             - line: int (行号)
             - snippet: str (代码片段)
             - detail: str (详细描述)
             - api: str (可选，仅用于 api_call 类型)
+            - caller_class: str (可选，仅用于 method_call 类型)
+            - caller_method: str (可选，仅用于 method_call 类型)
     
     返回:
         格式化的字符串
@@ -190,7 +192,8 @@ def format_cross_project_impacts(impacts):
         if project not in impacts_by_project:
             impacts_by_project[project] = {
                 'class_references': {},  # 改为字典，按文件分组
-                'api_calls': {}          # 改为字典，按文件分组
+                'api_calls': {},          # 改为字典，按文件分组
+                'method_calls': {}        # 新增：方法调用影响
             }
         
         impact_type = impact.get('type', 'unknown')
@@ -204,12 +207,17 @@ def format_cross_project_impacts(impacts):
             if file_path not in impacts_by_project[project]['api_calls']:
                 impacts_by_project[project]['api_calls'][file_path] = []
             impacts_by_project[project]['api_calls'][file_path].append(impact)
+        elif impact_type == 'method_call':
+            if file_path not in impacts_by_project[project]['method_calls']:
+                impacts_by_project[project]['method_calls'][file_path] = []
+            impacts_by_project[project]['method_calls'][file_path].append(impact)
     
     # 计算总影响数（按文件去重后）
     total_files = 0
     for project_impacts in impacts_by_project.values():
         total_files += len(project_impacts['class_references'])
         total_files += len(project_impacts['api_calls'])
+        total_files += len(project_impacts['method_calls'])
     
     # 格式化为人类可读的文本
     lines = []
@@ -222,9 +230,10 @@ def format_cross_project_impacts(impacts):
     for project_name, project_impacts in impacts_by_project.items():
         class_refs_by_file = project_impacts['class_references']
         api_calls_by_file = project_impacts['api_calls']
+        method_calls_by_file = project_impacts['method_calls']
         
         lines.append(f"【项目】{project_name}")
-        lines.append(f"  类引用: {len(class_refs_by_file)} 个文件 | API 调用: {len(api_calls_by_file)} 个文件")
+        lines.append(f"  类引用: {len(class_refs_by_file)} 个文件 | API 调用: {len(api_calls_by_file)} 个文件 | 方法调用: {len(method_calls_by_file)} 个文件")
         lines.append("")
         
         # 格式化类引用（按文件分组）
@@ -261,11 +270,47 @@ def format_cross_project_impacts(impacts):
                     api = call.get('api', 'Unknown')
                     line_num = call.get('line', 'N/A')
                     snippet = call.get('snippet', 'N/A')
-                    api_details.append(f"{api} @ L{line_num}: {snippet}")
+                    method_signature = call.get('method_signature', '')  # 新增：获取方法签名
+                    
+                    # 如果有方法签名，添加到详情中
+                    if method_signature:
+                        api_details.append(f"{api} (方法签名: {method_signature}) @ L{line_num}: {snippet}")
+                    else:
+                        api_details.append(f"{api} @ L{line_num}: {snippet}")
                 
                 # 显示所有 API 调用
                 lines.append(f"       调用位置: {len(calls)} 处")
                 for detail in api_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个调用的说明
+                lines.append(f"       说明: {calls[0].get('detail', 'N/A')}")
+                lines.append("")
+        
+        # 格式化方法调用影响（按文件分组）
+        if method_calls_by_file:
+            lines.append("  ▶ 方法调用影响（受影响的中间层方法）:")
+            for file_idx, (file_path, calls) in enumerate(method_calls_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有方法调用
+                method_details = []
+                for call in calls:
+                    caller_class = call.get('caller_class', 'Unknown')
+                    caller_method = call.get('caller_method', 'Unknown')
+                    method_signature = call.get('method_signature', '')  # 新增：获取方法签名
+                    line_num = call.get('line', 'N/A')
+                    snippet = call.get('snippet', 'N/A')
+                    
+                    # 如果有方法签名，使用方法签名；否则使用方法名
+                    if method_signature:
+                        method_details.append(f"{caller_class}.{method_signature} @ L{line_num}: {snippet}")
+                    else:
+                        method_details.append(f"{caller_class}.{caller_method} @ L{line_num}: {snippet}")
+                
+                # 显示所有方法调用
+                lines.append(f"       受影响方法: {len(calls)} 个")
+                for detail in method_details:
                     lines.append(f"         • {detail}")
                 
                 # 使用第一个调用的说明
@@ -537,9 +582,11 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
                 # 统计影响类型
                 class_refs = sum(1 for i in cross_project_impacts if i.get('type') == 'class_reference')
                 api_calls = sum(1 for i in cross_project_impacts if i.get('type') == 'api_call')
+                method_calls = sum(1 for i in cross_project_impacts if i.get('type') == 'method_call')
                 logger.info(f"  - 类引用: {class_refs} 个")
                 logger.info(f"  - API 调用: {api_calls} 个")
-                update_task_log(task_id, f"  - 类引用: {class_refs} 个, API 调用: {api_calls} 个")
+                logger.info(f"  - 方法调用: {method_calls} 个")
+                update_task_log(task_id, f"  - 类引用: {class_refs} 个, API 调用: {api_calls} 个, 方法调用: {method_calls} 个")
                 
                 # --- 任务 8.3: 格式化跨项目影响信息 ---
                 logger.info("正在格式化跨项目影响信息...")
@@ -623,7 +670,15 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
         lines = []
         for item in affected_api_endpoints:
             if isinstance(item, dict):
-                lines.append(f"- {item.get('api')} (Call Chain: {item.get('caller_class')}.{item.get('caller_method')})")
+                api = item.get('api')
+                caller_class = item.get('caller_class')
+                caller_method = item.get('caller_method')
+                method_signature = item.get('method_signature', caller_method)  # 使用完整方法签名
+                
+                # 格式化输出，包含方法签名
+                lines.append(f"- {api}")
+                lines.append(f"  Controller: {caller_class}.{method_signature}")
+                lines.append(f"  调用链: Controller → Service/Manager")
             else:
                 lines.append(f"- {item}")
         affected_apis_str = "\n".join(lines)
@@ -879,9 +934,35 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     ### 规则 3：匹配 HTTP 接口与重载方法
     1. 如果重载方法有对应的 HTTP 接口，使用 HTTP 接口测试
     2. 如果重载方法没有对应的 HTTP 接口，使用单元测试
-    3. 示例：
+    3. **关键**：使用 [Deep API Trace] 中提供的方法签名信息来精确匹配
+    4. 示例：
        - `sendOrderNotification(Long userId, String orderNumber)` → 有接口：`POST /api/notifications/order`
        - `sendOrderNotification(Long orderId)` → 无接口 → 使用单元测试
+    
+    ### 规则 3.1：使用 Deep API Trace 或 Cross-Project Impact Analysis 的方法签名验证（重要）
+    1. [Deep API Trace] 和 [Cross-Project Impact Analysis] 会提供完整的方法签名，格式如：
+       ```
+       - POST /api/notifications/order (方法签名: sendOrderNotification(Long, String))
+         Controller: NotificationController.sendOrderNotification(Long, String)
+         调用链: Controller → Service/Manager
+       ```
+    2. **必须**根据方法签名中的参数类型来判断调用的是哪个重载方法
+    3. **方法签名格式说明**：
+       - `sendOrderNotification(Long, String)` 表示两个参数：第一个是 Long 类型，第二个是 String 类型
+       - `sendOrderNotification(Long)` 表示一个参数：Long 类型
+       - 参数类型的顺序和数量必须完全匹配
+    4. 示例分析：
+       - 方法签名：`sendOrderNotification(Long, String)` 
+       - 参数类型：`Long userId, String orderNumber`
+       - 结论：调用的是 `sendOrderNotification(Long userId, String orderNumber)` 方法
+       - 验证：检查这个方法的实现，确认是否会调用目标方法（如 `getOrderStatusText`）
+       - 如果该方法**不会**调用目标方法，则该 API 接口**不适合**用于测试目标方法
+    5. **严禁**假设会调用其他重载方法，必须基于实际的方法签名判断
+    6. **关键判断流程**：
+       a. 查看 [Deep API Trace] 或 [Cross-Project Impact Analysis] 中的方法签名
+       b. 根据方法签名确定调用的是哪个重载方法
+       c. 检查该重载方法的实现，确认是否会调用目标方法
+       d. 如果不会调用目标方法，说明该 API 接口不适合用于测试，需要使用其他方式
     
     ### 规则 4：明确说明测试方式
     1. 如果使用 HTTP 接口测试，提供完整的 URL、HTTP 方法、Payload
@@ -897,26 +978,59 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     
     ## 跨服务测试路径生成规则（严格遵守）
     
-    ### 规则 1：验证 HTTP 接口是否存在
-    1. 在生成测试用例前，**必须**验证目标 HTTP 接口是否存在
-    2. 验证方法：
-       - 检查 Controller 类中是否有对应的 @GetMapping/@PostMapping/@PutMapping/@DeleteMapping 注解
-       - 检查方法签名是否匹配
-    3. 如果接口不存在，**严禁**编造接口
+    ### 规则 1：验证 HTTP 接口与目标方法的匹配关系
+    1. **关键原则**：只有当 HTTP 接口调用的方法**会触发目标逻辑**时，才能使用该接口进行测试
+    2. **验证步骤**：
+       a. 查看 [Cross-Project Impact Analysis] 中的 API 调用信息
+       b. 检查该 API 的**方法签名**
+       c. 根据方法签名判断调用的是哪个重载方法
+       d. 检查该重载方法的实现，确认是否会调用目标方法
+       e. **如果不会调用目标方法，则该 API 不适合用于测试**
     
-    ### 规则 2：处理没有 HTTP 接口的内部方法
+    3. **示例场景**：
+       - 测试目标：验证 `service-b` 调用 `service-a` 的 `getOrderStatusText` 方法
+       - [Cross-Project Impact Analysis] 显示：
+         * API: `POST /api/notifications/order` (方法签名: `sendOrderNotification(Long, String)`)
+         * 方法调用: `NotificationService.sendOrderNotification(Long)` @ L118 调用了 `getOrderStatusText`
+       - **分析**：
+         * `POST /api/notifications/order` 调用的是 `sendOrderNotification(Long, String)` 方法
+         * 但真正调用 `getOrderStatusText` 的是 `sendOrderNotification(Long)` 方法
+         * 这两个是**不同的重载方法**
+       - **结论**：`POST /api/notifications/order` **不适合**用于测试 `getOrderStatusText` 的跨服务调用
+       - **正确做法**：生成说明性测试用例，指出需要单元测试或新增接口
+    
+    ### 规则 2：生成说明性测试用例（当 HTTP 接口不适用时）
+    1. **适用场景**：
+       - 目标方法没有对应的 HTTP 接口
+       - 或者 HTTP 接口调用的是错误的重载方法
+    
+    2. **测试用例格式**：
+       - title: "跨服务调用测试 - [目标方法] (需要单元测试或新增接口)"
+       - priority: "P0"
+       - steps: "说明：[目标方法] 会调用 [跨服务方法]，但该方法没有对应的 HTTP 接口。建议：1. 使用单元测试直接调用 [目标方法]；2. 或在 Controller 中新增接口暴露该方法。"
+       - payload: "单元测试示例：notificationService.sendOrderNotification(123L)"
+       - validation: "验证 [跨服务方法] 被正确调用，且返回预期结果。"
+    
+    3. **具体示例**：
+       - title: "跨服务调用测试 - NotificationService.sendOrderNotification(Long) (需要单元测试或新增接口)"
+       - priority: "P0"
+       - steps: "说明：NotificationService.sendOrderNotification(Long orderId) 方法会调用 service-a 的 getOrderStatusText 接口，但该方法没有对应的 HTTP 接口（现有的 POST /api/notifications/order 接口调用的是另一个重载方法 sendOrderNotification(Long, String)，不会触发跨服务调用）。建议：1. 使用单元测试直接调用 notificationService.sendOrderNotification(123L)；2. 或在 NotificationController 中新增接口，如 POST /api/notifications/order-by-id?orderId=123。"
+       - payload: "单元测试示例：notificationService.sendOrderNotification(123L)"
+       - validation: "验证 service-a 的 GET /api/orders/{{orderId}}/status-text 接口被正确调用，且返回的状态描述（如 '待支付'）被正确使用。"
+    
+    ### 规则 3：严禁生成错误的 HTTP 接口测试用例
+    1. **严禁**使用不会触发目标逻辑的 HTTP 接口进行测试
+    2. **严禁**假设 HTTP 接口会调用其他重载方法
+    3. **必须**基于实际的方法签名判断
+    
+    ### 规则 4：处理没有 HTTP 接口的内部方法
     1. 如果目标方法没有对应的 HTTP 接口（如 Service/Manager 层方法），使用以下测试方式：
        - **方式 1（推荐）**：单元测试（直接调用 Java 方法）
-       - **方式 2**：集成测试（通过调用链上游的 HTTP 接口触发）
+       - **方式 2**：建议新增 HTTP 接口
     2. 示例：
        - 目标方法：`NotificationService.sendOrderNotification(Long orderId)`（无 HTTP 接口）
        - 方式 1：单元测试 `notificationService.sendOrderNotification(123L)`
-       - 方式 2：如果有上游接口调用此方法，通过上游接口触发
-    
-    ### 规则 3：跨服务测试的特殊处理
-    1. 如果测试目标是验证跨服务调用的兼容性，**必须**选择能触发跨服务调用的方法
-    2. 示例：
-       - 测试目标：验证 service-b 能正确调用 service-a 的 `getOrderById` 方法
+       - 方式 2：建议新增接口 `POST /api/notifications/order-by-id?orderId=123`
        - 正确选择：`sendOrderNotification(Long orderId)`（会调用 `userClient.getOrderById`）
        - 错误选择：`sendOrderNotification(Long userId, String orderNumber)`（不会调用 `getOrderById`）
     
@@ -1137,15 +1251,39 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
         - ✅ 正确验证点：`验证订单状态已更新为 2 (已取消)`
     
     11. **方法重载识别错误**：
-        - 测试目标：验证 `getOrderById` 方法的兼容性
-        - 方法 1：`sendOrderNotification(Long userId, String orderNumber)` → 不会调用 `getOrderById`
-        - 方法 2：`sendOrderNotification(Long orderId)` → 会调用 `getOrderById` ✓
-        - ❌ 错误选择：使用方法 1 进行测试
-        - ✅ 正确选择：使用方法 2 进行测试
+        - 场景：存在两个重载方法，需要选择正确的方法进行测试
+        - 方法 1：`sendOrderNotification(Long userId, String orderNumber)` → 不会调用 `getOrderStatusText`
+        - 方法 2：`sendOrderNotification(Long orderId)` → 会调用 `getOrderStatusText` ✓
+        
+        **错误示例 A：混淆重载方法**
+        - 测试目标：验证 `getOrderStatusText` 方法的跨服务调用
+        - ❌ 错误：使用 `POST /api/notifications/order?userId=789&orderNumber=ORD-301` 测试
+        - 原因：该接口调用的是方法 1，不会触发 `getOrderStatusText`
+        - ✅ 正确：
+          * 方式 1：新增接口 `POST /api/notifications/order-by-id?orderId=301` 调用方法 2
+          * 方式 2：使用单元测试 `notificationService.sendOrderNotification(301L)`
+        
+        **错误示例 B：忽略 Deep API Trace 或 Cross-Project Impact Analysis 的方法签名**
+        - [Deep API Trace] 或 [Cross-Project Impact Analysis] 显示：
+          ```
+          - POST /api/notifications/order (方法签名: sendOrderNotification(Long, String))
+            Controller: NotificationController.sendOrderNotification(Long, String)
+          ```
+        - ❌ 错误：假设该接口会调用 `sendOrderNotification(Long orderId)` 方法
+        - 原因：方法签名是 `(Long, String)`，明确指出调用的是两参数的重载方法
+        - ✅ 正确：根据方法签名 `(Long, String)` 判断调用的是 `sendOrderNotification(Long userId, String orderNumber)`
+        - ✅ 正确：检查该方法的实现，发现它不会调用 `getOrderStatusText`，因此该接口不适合用于测试
     
     12. **跨服务测试路径错误**：
         - ❌ 错误：编造不存在的接口 `POST /api/notifications/order-detail`
         - ✅ 正确：验证接口是否存在，如果不存在则使用单元测试
+        
+        **错误示例：验证点与实际调用不符**
+        - 接口：`POST /api/notifications/order?userId=789&orderNumber=ORD-301`
+        - 实际调用：`sendOrderNotification(Long userId, String orderNumber)` → 不调用 `getOrderStatusText`
+        - ❌ 错误验证点：验证响应包含 "已支付" 状态描述
+        - 原因：该方法不会调用 `getOrderStatusText`，响应消息是固定格式，不包含状态描述
+        - ✅ 正确：根据实际方法实现生成验证点
 
     请严格按照以下 JSON 格式返回（字段不可缺失，值为字符串的需用双引号包裹）：
     {{
@@ -1248,6 +1386,32 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
             report_json['_usage'] = usage
 
         return report_json
-    except json.JSONDecodeError:
-        console.print(f"[red]解析 AI 响应失败[/red]")
+    except json.JSONDecodeError as e:
+        from analyzer.log_config import log_and_print
+        
+        # 同时输出到控制台和日志文件
+        log_and_print(f"[red]解析 AI 响应失败[/red]", level="ERROR", style="red")
+        log_and_print(f"JSON 解析错误: {str(e)}", level="ERROR")
+        log_and_print(f"错误位置: 第 {e.lineno} 行, 第 {e.colno} 列", level="ERROR")
+        
+        # 输出 AI 原始响应内容（分段显示）
+        if response_content:
+            log_and_print("=" * 80, level="ERROR")
+            log_and_print("AI 原始响应内容（前 2000 字符）:", level="ERROR")
+            log_and_print(response_content[:2000], level="ERROR")
+            
+            if len(response_content) > 2000:
+                log_and_print("=" * 80, level="ERROR")
+                log_and_print("AI 原始响应内容（后 2000 字符）:", level="ERROR")
+                log_and_print(response_content[-2000:], level="ERROR")
+            
+            log_and_print("=" * 80, level="ERROR")
+        else:
+            log_and_print("AI 响应为空", level="ERROR")
+        
+        # 更新任务日志
+        update_task_log(task_id, f"[Error] JSON 解析失败: {str(e)}")
+        update_task_log(task_id, f"[Error] 错误位置: 第 {e.lineno} 行, 第 {e.colno} 列")
+        update_task_log(task_id, f"[Error] AI 响应前 500 字符: {response_content[:500] if response_content else '空'}")
+        
         return None

@@ -6,7 +6,9 @@ MultiProjectTracer - 协调多个项目仓库的分析
 """
 
 import os
+import re
 import logging
+import javalang
 from typing import List, Dict, Optional
 from .api_tracer import ApiUsageTracer
 from .static_parser import LightStaticAnalyzer
@@ -223,6 +225,7 @@ class MultiProjectTracer:
         这是跨项目分析的主要方法。它在所有关联项目中搜索:
         1. 类引用（导入和使用）
         2. 受变更方法影响的 API 调用
+        3. **递归追踪**：继续追踪使用这些类的其他类，直到找到 Controller 层的 API 接口
         
         参数:
             full_class_name: 完全限定类名（例如 "com.example.UserManager"）
@@ -273,7 +276,7 @@ class MultiProjectTracer:
             logger.info("没有关联项目需要扫描跨项目影响")
             return []
         
-        logger.info(f"开始对类 {full_class_name} 进行跨项目影响分析")
+        logger.info(f"开始对类 {full_class_name} 进行跨项目影响分析（递归模式）")
         logger.info(f"变更的方法: {', '.join(changed_methods)}")
         logger.info(f"扫描 {len(related_projects)} 个关联项目")
         
@@ -302,7 +305,7 @@ class MultiProjectTracer:
                     all_impacts.append(impact)
                     logger.info(f"    ✓ 在 {usage.get('path', 'unknown')} 中找到类引用")
                 
-                # 2. 为每个变更的方法查找 API 影响
+                # 2. 为每个变更的方法查找 API 影响（直接影响）
                 for method_name in changed_methods:
                     logger.info(f"  → 正在搜索 {simple_class_name}.{method_name} 的 API 影响...")
                     api_impacts = self.find_api_impacts_in_project(
@@ -319,10 +322,53 @@ class MultiProjectTracer:
                             "line": api_impact.get('line', 0),
                             "snippet": api_impact.get('snippet', ''),
                             "api": api_impact.get('api', ''),
+                            "method_signature": api_impact.get('method_signature', ''),  # 新增：方法签名
+                            "caller_class": api_impact.get('caller_class', ''),  # 新增：调用类
+                            "caller_method": api_impact.get('caller_method', ''),  # 新增：调用方法
                             "detail": f"{project_name} 中的 API {api_impact.get('api', 'unknown')} 调用了 {simple_class_name}.{method_name}"
                         }
                         all_impacts.append(impact)
-                        logger.info(f"    ✓ 找到 API 影响: {api_impact.get('api', 'unknown')}")
+                        
+                        # 添加日志：显示方法签名
+                        method_sig = api_impact.get('method_signature', '')
+                        if method_sig:
+                            logger.info(f"    ✓ 找到 API 影响: {api_impact.get('api', 'unknown')} (方法签名: {method_sig})")
+                        else:
+                            logger.info(f"    ✓ 找到 API 影响: {api_impact.get('api', 'unknown')} (方法签名: 未提取)")
+                            logger.warning(f"    ⚠ 警告：未提取到方法签名，可能导致重载方法识别错误")
+                
+                # 2.5 查找受影响的中间层方法（Service/Client 方法），即使没有 Controller 调用
+                logger.info(f"  → 正在搜索受影响的中间层方法...")
+                for method_name in changed_methods:
+                    intermediate_impacts = self._find_intermediate_method_impacts(
+                        project_root,
+                        project_name,
+                        simple_class_name,
+                        method_name
+                    )
+                    
+                    if intermediate_impacts:
+                        logger.info(f"    ✓ 找到 {len(intermediate_impacts)} 个受影响的中间层方法")
+                        all_impacts.extend(intermediate_impacts)
+                    else:
+                        logger.info(f"    - 未找到受影响的中间层方法")
+                
+                # 3. **新增：递归追踪影响链**
+                logger.info(f"  → 开始递归追踪影响链...")
+                recursive_impacts = self._find_recursive_impacts(
+                    project_root,
+                    project_name,
+                    full_class_name,
+                    changed_methods,
+                    depth=0,
+                    max_depth=5
+                )
+                
+                if recursive_impacts:
+                    logger.info(f"    ✓ 递归追踪发现 {len(recursive_impacts)} 个额外影响")
+                    all_impacts.extend(recursive_impacts)
+                else:
+                    logger.info(f"    - 递归追踪未发现额外影响")
                 
             except Exception as e:
                 logger.error(f"扫描项目 {project_name} 时出错: {str(e)}")
@@ -330,20 +376,398 @@ class MultiProjectTracer:
                 # 继续处理其他项目
                 continue
         
+        # 去重：基于 project + file + line + type 组合
+        unique_impacts = []
+        seen_keys = set()
+        for impact in all_impacts:
+            key = (
+                impact.get('project', ''),
+                impact.get('file', ''),
+                impact.get('line', 0),
+                impact.get('type', ''),
+                impact.get('api', ''),  # API 调用需要包含 api 字段
+                impact.get('caller_method', '')  # 方法调用需要包含 caller_method 字段
+            )
+            if key not in seen_keys:
+                seen_keys.add(key)
+                unique_impacts.append(impact)
+        
         # 按项目分组影响以生成摘要
         impacts_by_project = {}
-        for impact in all_impacts:
+        for impact in unique_impacts:
             project = impact['project']
             if project not in impacts_by_project:
                 impacts_by_project[project] = []
             impacts_by_project[project].append(impact)
         
         # 记录摘要
-        logger.info(f"跨项目影响分析完成:")
-        logger.info(f"  找到的总影响数: {len(all_impacts)}")
+        logger.info(f"跨项目影响分析完成（递归模式）:")
+        logger.info(f"  找到的总影响数: {len(unique_impacts)} (去重后)")
         for project, impacts in impacts_by_project.items():
             class_refs = sum(1 for i in impacts if i['type'] == 'class_reference')
             api_calls = sum(1 for i in impacts if i['type'] == 'api_call')
-            logger.info(f"  {project}: {class_refs} 个类引用, {api_calls} 个 API 调用")
+            method_calls = sum(1 for i in impacts if i['type'] == 'method_call')
+            logger.info(f"  {project}: {class_refs} 个类引用, {api_calls} 个 API 调用, {method_calls} 个方法调用")
         
-        return all_impacts
+        return unique_impacts
+    
+    def _find_recursive_impacts(
+        self,
+        project_root: str,
+        project_name: str,
+        target_class: str,
+        changed_methods: List[str],
+        depth: int,
+        max_depth: int,
+        visited: Optional[set] = None
+    ) -> List[Dict]:
+        """
+        递归追踪影响链，直到找到 Controller 层的 API 接口
+        
+        工作流程：
+        1. 找到使用 target_class 的所有类（调用者）
+        2. 对每个调用者：
+           a. 检查是否为 Controller（如果是，提取 API 接口）
+           b. 如果不是 Controller，递归追踪这个调用者
+        3. 重复直到达到最大深度或找到所有 Controller
+        
+        参数:
+            project_root: 项目根目录
+            project_name: 项目名称
+            target_class: 目标类名（完全限定名或简单名）
+            changed_methods: 变更的方法列表
+            depth: 当前递归深度
+            max_depth: 最大递归深度
+            visited: 已访问的类集合（避免循环依赖）
+            
+        返回:
+            影响字典列表
+        """
+        if visited is None:
+            visited = set()
+        
+        if depth >= max_depth:
+            logger.debug(f"    [Depth {depth}] 达到最大递归深度，停止追踪")
+            return []
+        
+        # 提取简单类名
+        simple_class_name = target_class.split('.')[-1] if '.' in target_class else target_class
+        
+        # 避免重复访问
+        if simple_class_name in visited:
+            logger.debug(f"    [Depth {depth}] 类 {simple_class_name} 已访问，跳过")
+            return []
+        
+        visited.add(simple_class_name)
+        
+        logger.debug(f"    [Depth {depth}] 递归追踪: {simple_class_name}")
+        
+        impacts = []
+        
+        try:
+            # 获取该项目的分析器
+            if project_root not in self.analyzers:
+                logger.warning(f"    [Depth {depth}] 项目 {project_name} 没有分析器")
+                return []
+            
+            analyzer = self.analyzers[project_root]
+            
+            # 查找使用 target_class 的所有类
+            usages = analyzer.find_usages(target_class)
+            
+            if not usages:
+                logger.debug(f"    [Depth {depth}] 未找到 {simple_class_name} 的使用者")
+                return []
+            
+            logger.debug(f"    [Depth {depth}] 找到 {len(usages)} 个使用 {simple_class_name} 的位置")
+            
+            # 提取使用者的类名（去重）
+            caller_classes = set()
+            for usage in usages:
+                usage_path = usage.get('path', '')
+                if usage_path:
+                    # 从文件路径提取类名
+                    # 例如: src/main/java/com/example/service/NotificationService.java -> NotificationService
+                    caller_class = os.path.basename(usage_path).replace('.java', '')
+                    caller_classes.add(caller_class)
+            
+            logger.debug(f"    [Depth {depth}] 使用者类: {', '.join(caller_classes)}")
+            
+            # 对每个调用者类进行处理
+            for caller_class in caller_classes:
+                # 检查是否为 Controller
+                is_controller = 'Controller' in caller_class or 'controller' in caller_class.lower()
+                
+                if is_controller:
+                    logger.info(f"    [Depth {depth}] ✓ 发现 Controller: {caller_class}")
+                    
+                    # 为每个变更的方法查找 API 影响
+                    for method_name in changed_methods:
+                        api_impacts = self.find_api_impacts_in_project(
+                            project_root,
+                            caller_class,
+                            method_name
+                        )
+                        
+                        for api_impact in api_impacts:
+                            impact = {
+                                "project": project_name,
+                                "type": "api_call",
+                                "file": api_impact.get('file', ''),
+                                "line": api_impact.get('line', 0),
+                                "snippet": api_impact.get('snippet', ''),
+                                "api": api_impact.get('api', ''),
+                                "detail": f"{project_name} 中的 API {api_impact.get('api', 'unknown')} 通过调用链受到影响 (深度: {depth+1})"
+                            }
+                            impacts.append(impact)
+                            logger.info(f"    [Depth {depth}] ✓✓ 找到递归 API 影响: {api_impact.get('api', 'unknown')}")
+                    
+                    # 即使是 Controller，也尝试查找它的所有方法对应的 API
+                    # 因为 Controller 的任何方法都可能暴露 API
+                    tracer = self.tracers.get(project_root)
+                    if tracer:
+                        # 获取 Controller 的所有公共方法
+                        controller_apis = self._find_controller_apis(project_root, caller_class)
+                        for api_info in controller_apis:
+                            impact = {
+                                "project": project_name,
+                                "type": "api_call",
+                                "file": api_info.get('file', ''),
+                                "line": api_info.get('line', 0),
+                                "snippet": api_info.get('snippet', ''),
+                                "api": api_info.get('api', ''),
+                                "detail": f"{project_name} 中的 API {api_info.get('api', 'unknown')} 可能受到影响 (通过 {caller_class})"
+                            }
+                            impacts.append(impact)
+                            logger.info(f"    [Depth {depth}] ✓✓ 找到 Controller API: {api_info.get('api', 'unknown')}")
+                else:
+                    # 不是 Controller，继续递归追踪
+                    logger.debug(f"    [Depth {depth}] → 继续追踪: {caller_class}")
+                    recursive_impacts = self._find_recursive_impacts(
+                        project_root,
+                        project_name,
+                        caller_class,
+                        changed_methods,
+                        depth + 1,
+                        max_depth,
+                        visited
+                    )
+                    impacts.extend(recursive_impacts)
+        
+        except Exception as e:
+            logger.error(f"    [Depth {depth}] 递归追踪出错: {str(e)}")
+            logger.error(f"    堆栈跟踪:", exc_info=True)
+        
+        return impacts
+    
+    def _find_controller_apis(self, project_root: str, controller_class: str) -> List[Dict]:
+        """
+        查找 Controller 类中的所有 API 接口
+        
+        参数:
+            project_root: 项目根目录
+            controller_class: Controller 类名
+            
+        返回:
+            API 信息字典列表
+        """
+        apis = []
+        
+        try:
+            # 查找 Controller 文件
+            controller_file = None
+            for root, dirs, files in os.walk(project_root):
+                # 忽略常见的非源码目录
+                for ignore in ["target", "node_modules", ".git", "venv", "__pycache__"]:
+                    if ignore in dirs:
+                        dirs.remove(ignore)
+                
+                for file in files:
+                    if file == f"{controller_class}.java":
+                        controller_file = os.path.join(root, file)
+                        break
+                
+                if controller_file:
+                    break
+            
+            if not controller_file:
+                logger.debug(f"未找到 Controller 文件: {controller_class}.java")
+                return []
+            
+            # 读取文件内容
+            with open(controller_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 检查是否为 Controller
+            if "@RestController" not in content and "@Controller" not in content:
+                return []
+            
+            # 使用 javalang 解析
+            import javalang
+            tree = javalang.parse.parse(content)
+            
+            # 获取类级别的 @RequestMapping
+            base_path = ""
+            for _, class_node in tree.filter(javalang.tree.ClassDeclaration):
+                if class_node.annotations:
+                    for ann in class_node.annotations:
+                        if ann.name == 'RequestMapping':
+                            base_path = self._extract_annotation_value(ann)
+                
+                # 遍历所有方法
+                for method_node in class_node.methods:
+                    if method_node.annotations:
+                        for ann in method_node.annotations:
+                            if ann.name in ['GetMapping', 'PostMapping', 'PutMapping', 'DeleteMapping', 'RequestMapping']:
+                                method_path = self._extract_annotation_value(ann)
+                                http_method = self._resolve_http_method(ann.name)
+                                
+                                # 组合路径
+                                full_path = self._combine_paths(base_path, method_path)
+                                
+                                # 获取行号
+                                line_num = method_node.position.line if method_node.position else 0
+                                
+                                apis.append({
+                                    "api": f"{http_method} {full_path}",
+                                    "file": controller_file,
+                                    "line": line_num,
+                                    "snippet": f"@{ann.name} {method_node.name}(...)"
+                                })
+        
+        except Exception as e:
+            logger.debug(f"解析 Controller {controller_class} 失败: {str(e)}")
+        
+        return apis
+    
+    def _extract_annotation_value(self, ann) -> str:
+        """从注解中提取 value 或 path 属性"""
+        try:
+            if not ann.element:
+                return ""
+            
+            if isinstance(ann.element, list):
+                for elem in ann.element:
+                    if elem.name in ['value', 'path']:
+                        if hasattr(elem.value, 'value'):
+                            return elem.value.value.strip('"')
+            elif hasattr(ann.element, 'value'):
+                return ann.element.value.strip('"')
+            elif isinstance(ann.element, javalang.tree.Literal):
+                return ann.element.value.strip('"')
+        except:
+            pass
+        
+        return ""
+    
+    def _resolve_http_method(self, ann_name: str) -> str:
+        """解析 HTTP 方法"""
+        mapping = {
+            'GetMapping': 'GET',
+            'PostMapping': 'POST',
+            'PutMapping': 'PUT',
+            'DeleteMapping': 'DELETE',
+            'RequestMapping': 'ALL'
+        }
+        return mapping.get(ann_name, 'ALL')
+    
+    def _combine_paths(self, base: str, sub: str) -> str:
+        """组合基础路径和子路径"""
+        import re
+        
+        if not base:
+            base = ""
+        if not sub:
+            sub = ""
+        
+        combined = f"{base}/{sub}"
+        # 规范化斜杠
+        combined = re.sub(r'/+', '/', combined)
+        if combined.endswith('/') and len(combined) > 1:
+            combined = combined[:-1]
+        if not combined.startswith('/'):
+            combined = '/' + combined
+        
+        return combined
+    
+    def _find_intermediate_method_impacts(
+        self,
+        project_root: str,
+        project_name: str,
+        target_class: str,
+        target_method: str
+    ) -> List[Dict]:
+        """
+        查找受影响的中间层方法（Service/Client 方法），即使没有 Controller 调用
+        
+        这个方法用于实现"选项 B"：报告所有受影响的 Service 方法，即使没有 Controller 调用
+        
+        参数:
+            project_root: 项目根目录
+            project_name: 项目名称
+            target_class: 目标类名（简单名或完全限定名）
+            target_method: 目标方法名
+            
+        返回:
+            影响字典列表，包含受影响的中间层方法信息
+        """
+        impacts = []
+        
+        try:
+            # 提取简单类名
+            simple_class_name = target_class.split('.')[-1] if '.' in target_class else target_class
+            
+            # 在项目中查找调用目标方法的所有方法
+            tracer = self.tracers.get(project_root)
+            if not tracer:
+                return []
+            
+            # 使用 ApiUsageTracer 的内部方法查找调用者
+            callers = tracer._find_callers_of_method(simple_class_name, target_method)
+            
+            for caller in callers:
+                caller_file = caller.get('file', '')
+                caller_class = caller.get('class', '')
+                caller_method = caller.get('method', '')
+                caller_method_signature = caller.get('method_signature', '')  # 新增：获取方法签名
+                caller_line = caller.get('line', 0)
+                caller_snippet = caller.get('snippet', '')
+                
+                # 判断是否为中间层（Service/Client/Manager 等，不是 Controller）
+                is_intermediate = any(
+                    keyword in caller_class
+                    for keyword in ['Service', 'Client', 'Manager', 'Helper', 'Util']
+                )
+                
+                is_controller = 'Controller' in caller_class or 'controller' in caller_class.lower()
+                
+                # 只报告中间层方法，不报告 Controller（Controller 已经在 API 影响中报告了）
+                if is_intermediate and not is_controller:
+                    # 获取相对路径
+                    rel_path = os.path.relpath(caller_file, project_root) if os.path.isabs(caller_file) else caller_file
+                    
+                    impact = {
+                        "project": project_name,
+                        "type": "method_call",  # 新类型：方法调用影响
+                        "file": rel_path,
+                        "line": caller_line,
+                        "snippet": caller_snippet,
+                        "caller_class": caller_class,
+                        "caller_method": caller_method,
+                        "method_signature": caller_method_signature,  # 新增：方法签名
+                        "detail": f"{project_name} 中的方法 {caller_class}.{caller_method} 调用了 {simple_class_name}.{target_method}"
+                    }
+                    impacts.append(impact)
+                    
+                    # 添加日志：显示方法签名
+                    if caller_method_signature:
+                        logger.debug(f"      ✓ 找到中间层方法影响: {caller_class}.{caller_method_signature}")
+                    else:
+                        logger.debug(f"      ✓ 找到中间层方法影响: {caller_class}.{caller_method} (方法签名: 未提取)")
+                        logger.warning(f"      ⚠ 警告：未提取到方法签名，可能导致重载方法识别错误")
+        
+        except Exception as e:
+            logger.error(f"查找中间层方法影响时出错: {str(e)}")
+            logger.error(f"堆栈跟踪:", exc_info=True)
+        
+        return impacts

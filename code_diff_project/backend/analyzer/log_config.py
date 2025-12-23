@@ -58,5 +58,42 @@ def setup_logger():
     return logger
 
 
+def log_and_print(message, level="INFO", style=None):
+    """
+    同时输出到控制台和日志文件的辅助函数
+    
+    参数:
+        message: 要输出的消息
+        level: 日志级别 (DEBUG/INFO/WARNING/ERROR)
+        style: Rich 样式（仅用于控制台显示）
+    """
+    from rich.console import Console
+    console = Console()
+    
+    # 1. 输出到控制台（使用 Rich 格式化）
+    if style:
+        console.print(message, style=style)
+    else:
+        console.print(message)
+    
+    # 2. 输出到日志文件（移除 Rich 标记）
+    # 移除 Rich 的颜色标记（如 [red]、[bold] 等）
+    import re
+    clean_message = re.sub(r'\[/?[a-z\s]+\]', '', str(message))
+    
+    # 根据级别记录日志
+    level = level.upper()
+    if level == "DEBUG":
+        logger.debug(clean_message)
+    elif level == "INFO":
+        logger.info(clean_message)
+    elif level == "WARNING":
+        logger.warning(clean_message)
+    elif level == "ERROR":
+        logger.error(clean_message)
+    else:
+        logger.info(clean_message)
+
+
 # 在模块导入时自动初始化
 setup_logger()

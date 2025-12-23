@@ -534,13 +534,9 @@ const ReportDetail = ({ report, onBack }) => {
       <div className="grid grid-cols-1 gap-3">
           {/* Summary Section */}
           <div className="bg-gradient-to-r from-slate-50 to-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden group">
-              <div className="absolute -top-4 -right-4 p-4 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity rotate-12">
-                  <InfoCircleOutlined style={{ fontSize: '120px' }} />
-              </div>
               <div className="relative z-10">
                   <div className="flex items-center gap-3 mb-4 border-b border-slate-100 pb-3">
                       <span className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2">
-                          <InfoCircleOutlined className="text-indigo-500" />
                           变更总结
                       </span>
                   </div>
@@ -600,7 +596,6 @@ const ReportDetail = ({ report, onBack }) => {
           {/* Change Details */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
               <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-50">
-                  <InfoCircleOutlined className="text-blue-500 text-base" />
                   <h3 className="font-bold text-gray-800 text-sm">变更详情分析</h3>
               </div>
               
