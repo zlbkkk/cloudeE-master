@@ -1,8 +1,12 @@
 ---
+alwaysApply: true
+---
+
+---
 inclusion: always
 ---
 
-# 项目工作规则
+
 
 ## 语言与交互规范
 
@@ -109,3 +113,5 @@ strReplace(path="file.py", oldStr="旧内容", newStr="新内容")
 - 收到用户反馈后，必须再次调用 `mcp-feedback-enhanced` 并根据反馈调整行为
 - 仅当用户明确表示「结束」或「不再需要交互」时，才停止调用
 - 完成任务前，必须使用 `mcp-feedback-enhanced` 工具向用户询问反馈
+
+

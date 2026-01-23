@@ -84,12 +84,16 @@ class GitLabProvider(GitProviderInterface):
             max_pages = 50  # 最多获取 50 页，避免无限循环
             
             logger.info(f"开始从 GitLab 组织 '{organization}' 获取项目列表...")
+            logger.info(f"API Base URL: {self.api_base}")
             
             while page <= max_pages:
                 try:
                     # GitLab API: 获取群组下的项目
+                    api_url = f"{self.api_base}/groups/{organization}/projects"
+                    logger.info(f"正在请求 GitLab API: {api_url}")
+                    
                     response = requests.get(
-                        f"{self.api_base}/groups/{organization}/projects",
+                        api_url,
                         headers=self.headers,
                         params={
                             'page': page,
@@ -99,6 +103,9 @@ class GitLabProvider(GitProviderInterface):
                         },
                         timeout=60  # 增加超时时间到 60 秒
                     )
+                    
+                    logger.info(f"GitLab API 响应状态码: {response.status_code}")
+                    logger.info(f"响应内容前 200 字符: {response.text[:200]}")
                     
                     if response.status_code == 404:
                         logger.error(f"GitLab 组织 '{organization}' 不存在或无权访问")

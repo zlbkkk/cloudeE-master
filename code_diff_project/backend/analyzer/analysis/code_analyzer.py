@@ -122,8 +122,19 @@ def extract_api_info(diff_text):
 
 
 def extract_controller_params(affected_api_endpoints, root_dir):
-    """提取 Controller 方法的参数信息，用于内部方法变更时的 Payload 生成"""
-    params_info = []
+    """
+    提取 Controller 方法的参数信息，用于内部方法变更时的 Payload 生成
+    
+    参数:
+        affected_api_endpoints: API 端点列表
+        root_dir: 项目根目录
+    
+    返回:
+        str: 格式化的参数信息字符串
+    """
+    from .api_tracer import ApiUsageTracer
+    
+    params_info_list = []
     
     for item in affected_api_endpoints:
         if not isinstance(item, dict):
@@ -132,129 +143,110 @@ def extract_controller_params(affected_api_endpoints, root_dir):
         caller_file = item.get('file', '')
         caller_method = item.get('caller_method', '')
         api_path = item.get('api', '')
+        caller_class = item.get('caller_class', '')
+        project_root = item.get('project_root', root_dir)
         
         if not caller_file or not caller_method or not api_path:
             continue
         
         # 构建完整文件路径
-        # caller_file 可能是绝对路径或相对路径
         if os.path.isabs(caller_file):
             full_path = caller_file
         else:
-            full_path = os.path.join(root_dir, caller_file)
+            full_path = os.path.join(project_root, caller_file)
         
         # 如果文件不存在，尝试其他可能的路径
         if not os.path.exists(full_path):
-            # 尝试相对路径（去掉开头的 /）
             if caller_file.startswith('/'):
-                full_path = os.path.join(root_dir, caller_file.lstrip('/'))
-            # 如果还是不存在，尝试从 root_dir 开始查找
+                full_path = os.path.join(project_root, caller_file.lstrip('/'))
             if not os.path.exists(full_path):
-                # 提取文件名，在 root_dir 下递归查找
                 file_name = os.path.basename(caller_file)
-                for root, dirs, files in os.walk(root_dir):
+                for root, dirs, files in os.walk(project_root):
                     if file_name in files:
                         full_path = os.path.join(root, file_name)
                         break
                 else:
                     continue
         
+        # 使用 ApiUsageTracer 的新方法提取参数
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                
-            # 使用正则表达式提取方法签名和参数
-            # 先找方法名，再在方法名附近查找参数定义
-            method_name_pattern = rf'\b{re.escape(caller_method)}\s*\('
-            method_name_match = re.search(method_name_pattern, content)
+            tracer = ApiUsageTracer(project_root)
+            param_info = tracer.extract_controller_params(full_path, caller_method)
             
-            method_def = None
-            if method_name_match:
-                # 向前查找方法定义和注解（最多向前500字符）
-                start_pos = max(0, method_name_match.start() - 500)
-                # 向后查找方法参数结束（最多向后200字符）
-                end_pos = min(len(content), method_name_match.end() + 200)
-                snippet = content[start_pos:end_pos]
+            if param_info and param_info.get('params'):
+                # 格式化参数信息
+                http_method = param_info.get('http_method', 'UNKNOWN')
+                path = param_info.get('path', '')
+                params = param_info.get('params', [])
                 
-                # 在 snippet 中查找方法参数部分（包括注解）
-                # 匹配从 @RequestParam/@PathVariable/@RequestBody 开始到参数结束
-                param_with_annotation_pattern = r'(@(?:RequestParam|PathVariable|RequestBody)(?:\([^)]*\))?\s+\w+\s+\w+)'
-                param_matches = list(re.finditer(param_with_annotation_pattern, snippet))
+                # 构建参数详情
+                param_details = []
+                payload_example_parts = []
                 
-                if param_matches:
-                    # 找到了带注解的参数，使用这些参数
-                    method_def = snippet
-                else:
-                    # 如果找不到带注解的参数，尝试匹配完整的方法定义
-                    method_pattern = rf'@(?:Request|Get|Post|Put|Delete|Patch)Mapping[^)]*\)\s*(?:public\s+)?[\w<>,\s]+\s+{re.escape(caller_method)}\s*\([^)]*\)'
-                    method_match = re.search(method_pattern, snippet, re.MULTILINE | re.DOTALL)
-                    if method_match:
-                        method_def = method_match.group(0)
+                for param in params:
+                    param_name = param.get('name')
+                    param_type = param.get('type')
+                    annotation = param.get('annotation')
+                    required = param.get('required', True)
+                    
+                    if annotation == 'RequestParam':
+                        param_details.append(f"`{param_name}` ({param_type}, Query String, {'必填' if required else '可选'})")
+                        # 生成示例值
+                        example_value = _generate_example_value(param_type)
+                        payload_example_parts.append(f"{param_name}={example_value}")
+                    
+                    elif annotation == 'PathVariable':
+                        param_details.append(f"`{param_name}` ({param_type}, URL Path, 必填)")
+                        # PathVariable 在 URL 中，不在 Query String 中
+                    
+                    elif annotation == 'RequestBody':
+                        param_details.append(f"`{param_name}` ({param_type}, JSON Body, 必填)")
+                        # RequestBody 需要 JSON 格式
+                        payload_example_parts.append(f"Body: {{{param_name}: <{param_type} object>}}")
+                
+                # 构建 Payload 示例
+                payload_example = ""
+                if payload_example_parts:
+                    if any('Body:' in part for part in payload_example_parts):
+                        # 有 RequestBody
+                        payload_example = "\n  - ".join(payload_example_parts)
+                    else:
+                        # 只有 Query String
+                        payload_example = "?" + "&".join(payload_example_parts)
+                
+                # 添加到结果列表
+                info_text = f"**{http_method} {path}** (Controller: {caller_class}.{caller_method}):\n"
+                info_text += f"  - 参数: {', '.join(param_details)}\n"
+                if payload_example:
+                    info_text += f"  - Payload 示例: `{payload_example}`\n"
+                info_text += f"  - **必须直接使用这些参数生成测试 Payload，不要写\"参数待确认\"等提示**"
+                
+                params_info_list.append(info_text)
             
-            if method_def:
-                # 提取参数：@RequestParam, @PathVariable, @RequestBody
-                params = []
-                
-                # 提取 @RequestParam 参数
-                request_param_pattern = r'@RequestParam\s+(?:\([^)]*\)\s*)?(\w+)\s+(\w+)'
-                for param_match in re.finditer(request_param_pattern, method_def):
-                    param_type = param_match.group(1)
-                    param_name = param_match.group(2)
-                    params.append(f"@RequestParam {param_type} {param_name}")
-                
-                # 提取 @PathVariable 参数
-                path_var_pattern = r'@PathVariable\s+(?:\([^)]*\)\s*)?(\w+)\s+(\w+)'
-                for param_match in re.finditer(path_var_pattern, method_def):
-                    param_type = param_match.group(1)
-                    param_name = param_match.group(2)
-                    params.append(f"@PathVariable {param_type} {param_name}")
-                
-                # 提取 @RequestBody 参数
-                request_body_pattern = r'@RequestBody\s+(\w+(?:<[^>]+>)?(?:\s*\[\])?)\s+(\w+)'
-                for param_match in re.finditer(request_body_pattern, method_def):
-                    param_type = param_match.group(1)
-                    param_name = param_match.group(2)
-                    params.append(f"@RequestBody {param_type} {param_name}")
-                
-                if params:
-                    # 格式化参数信息，使其更清晰
-                    param_details = []
-                    for param in params:
-                        # 提取参数名和类型
-                        if '@RequestParam' in param:
-                            param_match = re.search(r'@RequestParam\s+\w+\s+(\w+)', param)
-                            if param_match:
-                                param_name = param_match.group(1)
-                                param_details.append(f"`{param_name}` (Query String)")
-                        elif '@PathVariable' in param:
-                            param_match = re.search(r'@PathVariable\s+\w+\s+(\w+)', param)
-                            if param_match:
-                                param_name = param_match.group(1)
-                                param_details.append(f"`{param_name}` (URL Path)")
-                        elif '@RequestBody' in param:
-                            param_match = re.search(r'@RequestBody\s+\w+\s+(\w+)', param)
-                            if param_match:
-                                param_name = param_match.group(1)
-                                param_details.append(f"`{param_name}` (JSON Body)")
-                    
-                    if param_details:
-                        params_info.append(f"**{api_path}** (Controller: {item.get('caller_class')}.{caller_method}):\n  - 参数定义: {', '.join(params)}\n  - 参数名: {', '.join(param_details)}\n  - **必须直接使用这些参数生成 Payload，不要写\"需查看\"等提示**")
-                else:
-                    # 如果没有找到注解参数，尝试提取普通参数
-                    param_list_pattern = r'\(([^)]+)\)'
-                    param_list_match = re.search(param_list_pattern, method_def)
-                    if param_list_match:
-                        param_list = param_list_match.group(1).strip()
-                        if param_list and param_list != '':
-                            params_info.append(f"**{api_path}** (Controller: {item.get('caller_class')}.{caller_method}):\n  - 参数: {param_list} (未找到注解，需手动确认)")
-                    
         except Exception as e:
-            logger.warning(f"Failed to extract params from {caller_file}: {e}")
+            logger.debug(f"提取 Controller 参数时出错 {full_path}: {e}")
             continue
     
-    if params_info:
-        return "\n\n**Controller 参数信息（用于 Payload 生成 - 必须直接使用，不要写\"需查看\"提示）**:\n" + "\n".join(params_info) + "\n\n**重要**：如果上面提供了参数信息，Payload 示例必须直接使用这些参数，格式如下：\n- GET/DELETE + @RequestParam → `?参数名=值`\n- POST/PUT + @RequestParam → `?参数名=值`\n- POST/PUT + @RequestBody → `{{\"参数名\": \"值\"}}`\n严禁写\"需查看\"、\"需确认\"等提示性文字。"
-    return ""
+    if params_info_list:
+        return "\n\n## Controller 参数信息（系统自动提取）\n\n" + "\n\n".join(params_info_list)
+    else:
+        return ""
+
+
+def _generate_example_value(param_type):
+    """根据参数类型生成示例值"""
+    type_examples = {
+        'Long': '1001',
+        'Integer': '100',
+        'String': 'example',
+        'BigDecimal': '99.99',
+        'Double': '99.99',
+        'Float': '99.99',
+        'Boolean': 'true',
+        'Date': '2024-01-01',
+        'LocalDateTime': '2024-01-01T12:00:00',
+    }
+    return type_examples.get(param_type, 'value')
 
 
 def search_api_usages(root_dir, api_info, exclude_file):

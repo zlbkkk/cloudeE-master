@@ -170,7 +170,7 @@ def format_cross_project_impacts(impacts):
     参数:
         impacts: 影响字典列表，每个字典包含:
             - project: str (项目名称)
-            - type: str ('class_reference', 'api_call', 或 'method_call')
+            - type: str ('class_reference', 'api_call', 'method_call', 'rabbitmq_producer', 或 'rabbitmq_consumer')
             - file: str (文件路径)
             - line: int (行号)
             - snippet: str (代码片段)
@@ -178,6 +178,9 @@ def format_cross_project_impacts(impacts):
             - api: str (可选，仅用于 api_call 类型)
             - caller_class: str (可选，仅用于 method_call 类型)
             - caller_method: str (可选，仅用于 method_call 类型)
+            - exchange: str (可选，仅用于 rabbitmq_producer 类型)
+            - routing_key: str (可选，仅用于 rabbitmq_producer 类型)
+            - queue: str (可选，仅用于 rabbitmq_consumer 类型)
     
     返回:
         格式化的字符串
@@ -193,7 +196,12 @@ def format_cross_project_impacts(impacts):
             impacts_by_project[project] = {
                 'class_references': {},  # 改为字典，按文件分组
                 'api_calls': {},          # 改为字典，按文件分组
-                'method_calls': {}        # 新增：方法调用影响
+                'method_calls': {},       # 新增：方法调用影响
+                'rabbitmq_producers': {}, # 新增：RabbitMQ 消息生产者
+                'rabbitmq_consumers': {}, # 新增：RabbitMQ 消息消费者
+                'resttemplate_calls': {},  # 新增：RestTemplate HTTP 调用
+                'dubbo_rpc_calls': {},  # 新增：Dubbo RPC 调用
+                'dubbo_rpc_references': {}  # 新增：Dubbo RPC 引用
             }
         
         impact_type = impact.get('type', 'unknown')
@@ -211,6 +219,26 @@ def format_cross_project_impacts(impacts):
             if file_path not in impacts_by_project[project]['method_calls']:
                 impacts_by_project[project]['method_calls'][file_path] = []
             impacts_by_project[project]['method_calls'][file_path].append(impact)
+        elif impact_type == 'rabbitmq_producer':
+            if file_path not in impacts_by_project[project]['rabbitmq_producers']:
+                impacts_by_project[project]['rabbitmq_producers'][file_path] = []
+            impacts_by_project[project]['rabbitmq_producers'][file_path].append(impact)
+        elif impact_type == 'rabbitmq_consumer':
+            if file_path not in impacts_by_project[project]['rabbitmq_consumers']:
+                impacts_by_project[project]['rabbitmq_consumers'][file_path] = []
+            impacts_by_project[project]['rabbitmq_consumers'][file_path].append(impact)
+        elif impact_type == 'resttemplate_call':
+            if file_path not in impacts_by_project[project]['resttemplate_calls']:
+                impacts_by_project[project]['resttemplate_calls'][file_path] = []
+            impacts_by_project[project]['resttemplate_calls'][file_path].append(impact)
+        elif impact_type == 'dubbo_rpc_call':
+            if file_path not in impacts_by_project[project]['dubbo_rpc_calls']:
+                impacts_by_project[project]['dubbo_rpc_calls'][file_path] = []
+            impacts_by_project[project]['dubbo_rpc_calls'][file_path].append(impact)
+        elif impact_type == 'dubbo_rpc_reference':
+            if file_path not in impacts_by_project[project]['dubbo_rpc_references']:
+                impacts_by_project[project]['dubbo_rpc_references'][file_path] = []
+            impacts_by_project[project]['dubbo_rpc_references'][file_path].append(impact)
     
     # 计算总影响数（按文件去重后）
     total_files = 0
@@ -218,6 +246,11 @@ def format_cross_project_impacts(impacts):
         total_files += len(project_impacts['class_references'])
         total_files += len(project_impacts['api_calls'])
         total_files += len(project_impacts['method_calls'])
+        total_files += len(project_impacts['rabbitmq_producers'])
+        total_files += len(project_impacts['rabbitmq_consumers'])
+        total_files += len(project_impacts['resttemplate_calls'])
+        total_files += len(project_impacts['dubbo_rpc_calls'])
+        total_files += len(project_impacts['dubbo_rpc_references'])
     
     # 格式化为人类可读的文本
     lines = []
@@ -231,9 +264,14 @@ def format_cross_project_impacts(impacts):
         class_refs_by_file = project_impacts['class_references']
         api_calls_by_file = project_impacts['api_calls']
         method_calls_by_file = project_impacts['method_calls']
+        rabbitmq_producers_by_file = project_impacts['rabbitmq_producers']
+        rabbitmq_consumers_by_file = project_impacts['rabbitmq_consumers']
+        resttemplate_calls_by_file = project_impacts['resttemplate_calls']
+        dubbo_rpc_calls_by_file = project_impacts['dubbo_rpc_calls']
+        dubbo_rpc_references_by_file = project_impacts['dubbo_rpc_references']
         
         lines.append(f"【项目】{project_name}")
-        lines.append(f"  类引用: {len(class_refs_by_file)} 个文件 | API 调用: {len(api_calls_by_file)} 个文件 | 方法调用: {len(method_calls_by_file)} 个文件")
+        lines.append(f"  类引用: {len(class_refs_by_file)} 个文件 | API 调用: {len(api_calls_by_file)} 个文件 | 方法调用: {len(method_calls_by_file)} 个文件 | RabbitMQ: {len(rabbitmq_producers_by_file) + len(rabbitmq_consumers_by_file)} 个文件 | RestTemplate: {len(resttemplate_calls_by_file)} 个文件 | Dubbo RPC: {len(dubbo_rpc_calls_by_file) + len(dubbo_rpc_references_by_file)} 个文件")
         lines.append("")
         
         # 格式化类引用（按文件分组）
@@ -317,6 +355,136 @@ def format_cross_project_impacts(impacts):
                 lines.append(f"       说明: {calls[0].get('detail', 'N/A')}")
                 lines.append("")
         
+        # 格式化 RabbitMQ 消息生产者（按文件分组）
+        if rabbitmq_producers_by_file:
+            lines.append("  ▶ RabbitMQ 消息生产者:")
+            for file_idx, (file_path, producers) in enumerate(rabbitmq_producers_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有消息生产者
+                producer_details = []
+                for producer in producers:
+                    exchange = producer.get('exchange', 'Unknown')
+                    routing_key = producer.get('routing_key', 'Unknown')
+                    message_type = producer.get('message_type', 'Unknown')
+                    line_num = producer.get('line', 'N/A')
+                    snippet = producer.get('snippet', 'N/A')
+                    
+                    producer_details.append(f"Exchange: {exchange}, RoutingKey: {routing_key}, MessageType: {message_type} @ L{line_num}: {snippet}")
+                
+                # 显示所有消息生产者
+                lines.append(f"       消息发送: {len(producers)} 处")
+                for detail in producer_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个生产者的说明
+                lines.append(f"       说明: {producers[0].get('detail', 'N/A')}")
+                lines.append("")
+        
+        # 格式化 RabbitMQ 消息消费者（按文件分组）
+        if rabbitmq_consumers_by_file:
+            lines.append("  ▶ RabbitMQ 消息消费者:")
+            for file_idx, (file_path, consumers) in enumerate(rabbitmq_consumers_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有消息消费者
+                consumer_details = []
+                for consumer in consumers:
+                    queue = consumer.get('queue', 'Unknown')
+                    consumer_class = consumer.get('consumer_class', 'Unknown')
+                    consumer_method = consumer.get('consumer_method', 'Unknown')
+                    line_num = consumer.get('line', 'N/A')
+                    snippet = consumer.get('snippet', 'N/A')
+                    
+                    consumer_details.append(f"Queue: {queue}, Consumer: {consumer_class}.{consumer_method} @ L{line_num}: {snippet}")
+                
+                # 显示所有消息消费者
+                lines.append(f"       消息消费: {len(consumers)} 处")
+                for detail in consumer_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个消费者的说明
+                lines.append(f"       说明: {consumers[0].get('detail', 'N/A')}")
+                lines.append("")
+        
+        # 格式化 RestTemplate HTTP 调用（按文件分组）
+        if resttemplate_calls_by_file:
+            lines.append("  ▶ RestTemplate HTTP 调用:")
+            for file_idx, (file_path, calls) in enumerate(resttemplate_calls_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有 HTTP 调用
+                call_details = []
+                for call in calls:
+                    http_method = call.get('http_method', 'Unknown')
+                    url = call.get('url', 'Unknown')
+                    response_type = call.get('response_type', 'Unknown')
+                    line_num = call.get('line', 'N/A')
+                    snippet = call.get('snippet', 'N/A')
+                    
+                    call_details.append(f"{http_method} {url} -> {response_type} @ L{line_num}: {snippet}")
+                
+                # 显示所有 HTTP 调用
+                lines.append(f"       HTTP 调用: {len(calls)} 处")
+                for detail in call_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个调用的说明
+                lines.append(f"       说明: {calls[0].get('detail', 'N/A')}")
+                lines.append("")
+        
+        # 格式化 Dubbo RPC 调用（按文件分组）
+        if dubbo_rpc_calls_by_file:
+            lines.append("  ▶ Dubbo RPC 调用:")
+            for file_idx, (file_path, calls) in enumerate(dubbo_rpc_calls_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有 Dubbo RPC 调用
+                call_details = []
+                for call in calls:
+                    caller_class = call.get('caller_class', 'Unknown')
+                    caller_method = call.get('caller_method', 'Unknown')
+                    interface = call.get('interface', 'Unknown')
+                    called_method = call.get('called_method', 'Unknown')
+                    line_num = call.get('line', 'N/A')
+                    snippet = call.get('snippet', 'N/A')
+                    
+                    call_details.append(f"{caller_class}.{caller_method} -> {interface}.{called_method} @ L{line_num}: {snippet}")
+                
+                # 显示所有 Dubbo RPC 调用
+                lines.append(f"       RPC 调用: {len(calls)} 处")
+                for detail in call_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个调用的说明
+                lines.append(f"       说明: {calls[0].get('detail', 'N/A')}")
+                lines.append("")
+        
+        # 格式化 Dubbo RPC 引用（按文件分组）
+        if dubbo_rpc_references_by_file:
+            lines.append("  ▶ Dubbo RPC 引用:")
+            for file_idx, (file_path, refs) in enumerate(dubbo_rpc_references_by_file.items(), 1):
+                lines.append(f"    {file_idx}. 文件: {file_path}")
+                
+                # 收集所有 Dubbo RPC 引用
+                ref_details = []
+                for ref in refs:
+                    caller_class = ref.get('caller_class', 'Unknown')
+                    interface = ref.get('interface', 'Unknown')
+                    line_num = ref.get('line', 'N/A')
+                    snippet = ref.get('snippet', 'N/A')
+                    
+                    ref_details.append(f"{caller_class} 注入 {interface} @ L{line_num}: {snippet}")
+                
+                # 显示所有 Dubbo RPC 引用
+                lines.append(f"       RPC 引用: {len(refs)} 处")
+                for detail in ref_details:
+                    lines.append(f"         • {detail}")
+                
+                # 使用第一个引用的说明
+                lines.append(f"       说明: {refs[0].get('detail', 'N/A')}")
+                lines.append("")
+        
         lines.append("-" * 80)
         lines.append("")
     
@@ -364,7 +532,7 @@ def call_deepseek_api(messages):
     return None, None
 
 
-def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=None, target_ref=None, tracer=None, scan_roots=None, update_task_log=None, print_code_comparison=None, get_project_structure=None, extract_api_info=None, search_api_usages=None, extract_changed_methods=None, extract_controller_params=None, refine_report_with_static_analysis=None):
+def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=None, target_ref=None, tracer=None, scan_roots=None, update_task_log=None, print_code_comparison=None, get_project_structure=None, extract_api_info=None, search_api_usages=None, extract_changed_methods=None, extract_controller_params=None, refine_report_with_static_analysis=None, frontend_calls_info=None):
     # 导入必要的函数（如果没有传入）
     if print_code_comparison is None:
         from .report_generator import print_code_comparison
@@ -555,6 +723,14 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     
     # 检查是否为多项目模式（tracer 是否为 MultiProjectTracer 实例）
     from .multi_project_tracer import MultiProjectTracer
+    
+    # DEBUG: 输出关键变量
+    logger.info(f"[DEBUG] 检查跨项目分析条件:")
+    logger.info(f"[DEBUG]   isinstance(tracer, MultiProjectTracer): {isinstance(tracer, MultiProjectTracer)}")
+    logger.info(f"[DEBUG]   full_class_name: {full_class_name}")
+    logger.info(f"[DEBUG]   changed_methods: {changed_methods}")
+    logger.info(f"[DEBUG]   条件判断结果: {isinstance(tracer, MultiProjectTracer) and full_class_name and changed_methods}")
+    
     if isinstance(tracer, MultiProjectTracer) and full_class_name and changed_methods:
         try:
             console.print(f"[Info] 正在执行跨项目影响分析...", style="bold magenta")
@@ -579,14 +755,26 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
                 logger.info(f"跨项目影响分析完成 - 发现 {len(cross_project_impacts)} 个影响")
                 update_task_log(task_id, f"[Cross-Project Analysis] 发现 {len(cross_project_impacts)} 个跨项目影响")
                 
-                # 统计影响类型
+                # 统计所有影响类型
                 class_refs = sum(1 for i in cross_project_impacts if i.get('type') == 'class_reference')
                 api_calls = sum(1 for i in cross_project_impacts if i.get('type') == 'api_call')
                 method_calls = sum(1 for i in cross_project_impacts if i.get('type') == 'method_call')
+                rabbitmq_producers = sum(1 for i in cross_project_impacts if i.get('type') == 'rabbitmq_producer')
+                rabbitmq_consumers = sum(1 for i in cross_project_impacts if i.get('type') == 'rabbitmq_consumer')
+                resttemplate_calls = sum(1 for i in cross_project_impacts if i.get('type') == 'resttemplate_call')
+                dubbo_rpc_calls = sum(1 for i in cross_project_impacts if i.get('type') == 'dubbo_rpc_call')
+                dubbo_rpc_refs = sum(1 for i in cross_project_impacts if i.get('type') == 'dubbo_rpc_reference')
+                
                 logger.info(f"  - 类引用: {class_refs} 个")
                 logger.info(f"  - API 调用: {api_calls} 个")
                 logger.info(f"  - 方法调用: {method_calls} 个")
-                update_task_log(task_id, f"  - 类引用: {class_refs} 个, API 调用: {api_calls} 个, 方法调用: {method_calls} 个")
+                logger.info(f"  - RabbitMQ 生产者: {rabbitmq_producers} 个")
+                logger.info(f"  - RabbitMQ 消费者: {rabbitmq_consumers} 个")
+                logger.info(f"  - RestTemplate 调用: {resttemplate_calls} 个")
+                logger.info(f"  - Dubbo RPC 调用: {dubbo_rpc_calls} 个")
+                logger.info(f"  - Dubbo RPC 引用: {dubbo_rpc_refs} 个")
+                
+                update_task_log(task_id, f"  - 类引用: {class_refs}, API调用: {api_calls}, 方法调用: {method_calls}, RabbitMQ: {rabbitmq_producers + rabbitmq_consumers}, RestTemplate: {resttemplate_calls}, Dubbo RPC: {dubbo_rpc_calls + dubbo_rpc_refs}")
                 
                 # --- 任务 8.3: 格式化跨项目影响信息 ---
                 logger.info("正在格式化跨项目影响信息...")
@@ -627,45 +815,158 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     if filename.endswith(".java") or filename.endswith(".xml"):
         try:
             console.print(f"[Info] 正在执行深度 API 链路追踪 (ApiUsageTracer)...", style="bold blue")
-            # Use passed tracer or create new one
-            # 如果是 MultiProjectTracer，使用主项目的 tracer
+            
+            # 收集所有需要追踪的项目
+            tracers_to_search = []
+            
             if isinstance(tracer, MultiProjectTracer):
+                # 1. 主项目追踪器
                 main_project_root = tracer.get_main_project_root()
                 if main_project_root and main_project_root in tracer.tracers:
-                    current_tracer = tracer.tracers[main_project_root]
-                else:
-                    current_tracer = ApiUsageTracer(root_dir)
+                    tracers_to_search.append(('main', main_project_root, tracer.tracers[main_project_root]))
+                    logger.info(f"将在主项目中追踪 API: {main_project_root}")
+                
+                # 2. 受影响的关联项目追踪器
+                if cross_project_impacts:
+                    affected_projects = set()
+                    for impact in cross_project_impacts:
+                        project = impact.get('project', '')
+                        if project and project != 'main':
+                            affected_projects.add(project)
+                    
+                    logger.info(f"发现 {len(affected_projects)} 个受影响的关联项目: {affected_projects}")
+                    
+                    for project_name in affected_projects:
+                        # 查找该项目的追踪器
+                        for project_root, project_tracer in tracer.tracers.items():
+                            if project_name in project_root or os.path.basename(project_root) == project_name:
+                                tracers_to_search.append((project_name, project_root, project_tracer))
+                                logger.info(f"将在关联项目中追踪 API: {project_name} ({project_root})")
+                                break
             else:
+                # 单项目模式
                 current_tracer = tracer if tracer else ApiUsageTracer(root_dir)
+                tracers_to_search.append(('main', root_dir, current_tracer))
             
             # Use the extracted class name and methods
             if not simple_class_name:
                 simple_class_name = os.path.basename(filename).replace(".java", "").replace(".xml", "")
             
-            # 3. Trace each method
-            for method in changed_methods:
-                apis = current_tracer.find_affected_apis(simple_class_name, method)
-                if apis:
-                    for api_item in apis:
-                        if isinstance(api_item, dict):
-                            api_str = api_item.get('api')
-                            # Avoid duplicates
-                            is_dup = False
-                            for existing in affected_api_endpoints:
-                                if isinstance(existing, dict) and existing.get('api') == api_str:
-                                    is_dup = True
-                                    break
-                            if not is_dup:
-                                affected_api_endpoints.append(api_item)
-                        elif api_item not in affected_api_endpoints:
-                            affected_api_endpoints.append(api_item)
+            # 提取方法签名（用于区分重载方法）
+            method_signatures = {}
+            if filename.endswith(".java") and os.path.exists(full_path):
+                try:
+                    import javalang
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+                    tree = javalang.parse.parse(file_content)
+                    
+                    # 遍历所有方法，提取方法签名
+                    for _, method_node in tree.filter(javalang.tree.MethodDeclaration):
+                        method_name = method_node.name
+                        # 提取参数类型
+                        params = []
+                        if method_node.parameters:
+                            for param in method_node.parameters:
+                                if param.type:
+                                    if hasattr(param.type, 'name'):
+                                        params.append(param.type.name)
+                                    elif hasattr(param.type, 'type') and hasattr(param.type.type, 'name'):
+                                        params.append(param.type.type.name)
+                        
+                        # 构建方法签名
+                        if params:
+                            signature = f"{method_name}({', '.join(params)})"
+                        else:
+                            signature = f"{method_name}()"
+                        
+                        # 存储方法签名（如果有重载，存储为列表）
+                        if method_name not in method_signatures:
+                            method_signatures[method_name] = []
+                        method_signatures[method_name].append(signature)
+                    
+                    logger.info(f"成功提取 {len(method_signatures)} 个方法的签名")
+                except Exception as e:
+                    logger.warning(f"提取方法签名失败: {e}")
+            
+            # 3. 在所有相关项目中追踪每个方法
+            for project_name, project_root, current_tracer in tracers_to_search:
+                logger.info(f"在项目 {project_name} 中追踪 API 入口...")
+                
+                # 确定要追踪的类和方法
+                if project_name == 'main':
+                    # 主项目：追踪变更的类和方法
+                    classes_to_trace = [(simple_class_name, changed_methods)]
+                else:
+                    # 关联项目：从跨项目影响中提取被调用的类和方法
+                    classes_to_trace = []
+                    if cross_project_impacts:
+                        # 按类分组影响
+                        impacts_by_class = {}
+                        for impact in cross_project_impacts:
+                            if impact.get('project') == project_name:
+                                caller_class = impact.get('caller_class', '')
+                                caller_method = impact.get('caller_method', '')
+                                if caller_class and caller_method:
+                                    if caller_class not in impacts_by_class:
+                                        impacts_by_class[caller_class] = set()
+                                    impacts_by_class[caller_class].add(caller_method)
+                        
+                        # 转换为追踪列表
+                        for class_name, methods in impacts_by_class.items():
+                            classes_to_trace.append((class_name, list(methods)))
+                            logger.info(f"将在项目 {project_name} 中追踪类 {class_name} 的方法: {list(methods)}")
+                
+                if not classes_to_trace:
+                    logger.info(f"项目 {project_name} 中没有需要追踪的类和方法")
+                    continue
+                
+                # 追踪每个类的每个方法
+                for class_name, methods_to_trace in classes_to_trace:
+                    for method in methods_to_trace:
+                        # 对于主项目，使用提取的方法签名
+                        # 对于关联项目，暂时不使用签名（因为我们没有解析关联项目的方法签名）
+                        method_signature = None
+                        if project_name == 'main' and method in method_signatures:
+                            signatures = method_signatures[method]
+                            if len(signatures) == 1:
+                                method_signature = signatures[0]
+                                # logger.info(f"方法 {method} 的签名: {method_signature}")
+                            else:
+                                # logger.info(f"方法 {method} 有 {len(signatures)} 个重载: {signatures}")
+                                method_signature = signatures[0]
+                                logger.warning(f"方法 {method} 有多个重载，当前只追踪第一个: {method_signature}")
+                        
+                        # 调用 find_affected_apis，传递方法签名
+                        apis = current_tracer.find_affected_apis(class_name, method, method_signature)
+                        if apis:
+                            # logger.info(f"在项目 {project_name} 中发现 {len(apis)} 个 API 入口（{class_name}.{method}）")
+                            for api_item in apis:
+                                if isinstance(api_item, dict):
+                                    api_str = api_item.get('api')
+                                    # 添加项目信息
+                                    api_item['project'] = project_name
+                                    api_item['project_root'] = project_root
+                                    # Avoid duplicates
+                                    is_dup = False
+                                    for existing in affected_api_endpoints:
+                                        if isinstance(existing, dict) and existing.get('api') == api_str:
+                                            is_dup = True
+                                            break
+                                    if not is_dup:
+                                        affected_api_endpoints.append(api_item)
+                        else:
+                            logger.debug(f"在项目 {project_name} 中未发现 {class_name}.{method} 的 API 入口")
         except Exception as e:
             console.print(f"[yellow]ApiUsageTracer failed: {e}[/yellow]")
+            logger.error(f"API 追踪失败: {e}", exc_info=True)
 
     affected_apis_str = "未检测到受影响的 API 入口。"
     controller_params_info = ""  # 用于存储 Controller 参数信息
     
     if affected_api_endpoints:
+        console.print(f"[Success] 发现 {len(affected_api_endpoints)} 个受影响的 HTTP API 入口", style="bold green")
+        
         # Format list for prompt
         lines = []
         for item in affected_api_endpoints:
@@ -674,11 +975,13 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
                 caller_class = item.get('caller_class')
                 caller_method = item.get('caller_method')
                 method_signature = item.get('method_signature', caller_method)  # 使用完整方法签名
+                project = item.get('project', 'unknown')
                 
-                # 格式化输出，包含方法签名
+                # 格式化输出，包含项目和方法签名
                 lines.append(f"- {api}")
+                lines.append(f"  项目: {project}")
                 lines.append(f"  Controller: {caller_class}.{method_signature}")
-                lines.append(f"  调用链: Controller → Service/Manager")
+                lines.append(f"  调用链: HTTP API → Controller → Service")
             else:
                 lines.append(f"- {item}")
         affected_apis_str = "\n".join(lines)
@@ -693,7 +996,7 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
             controller_params_info = extract_controller_params(affected_api_endpoints, root_dir)
         
         console.print(Panel(f"[bold green]深度追踪发现受影响 API:[/bold green]\n{affected_apis_str}", title="Deep API Trace", border_style="green"))
-        update_task_log(task_id, f"[Deep API Trace] 深度追踪发现受影响 API:\n{affected_apis_str}")
+        update_task_log(task_id, f"[Deep API Trace] 深度追踪发现 {len(affected_api_endpoints)} 个受影响 API")
         
         # --- MERGE INTO CROSS-SERVICE IMPACT ---
         if downstream_info == "未检测到明显的跨服务调用引用。" or downstream_info == "未检测到明显的调用引用。":
@@ -716,7 +1019,8 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
                 downstream_info += f"- [API Impact] Endpoint: {item}\n"
                 downstream_info += f"  Risk: High (Direct external entry point)\n"
     else:
-        console.print("[Info] 深度追踪未发现受影响的 API 入口。", style="dim")
+        console.print("[Info] 深度追踪未发现受影响的 API 入口。", style="yellow")
+        update_task_log(task_id, "[Deep API Trace] 未发现受影响的 API 入口")
 
     # --- 任务 8.4: 集成到 downstream_info ---
     # 将格式化的跨项目影响添加到 downstream_info 字符串
@@ -745,10 +1049,272 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     console.print(f"\n[AI Analysis] 正在使用 DeepSeek ({DEEPSEEK_MODEL}) 分析 {filename} ...", style="bold magenta")
     update_task_log(task_id, f"[AI Analysis] 正在请求 AI 分析...")
     
-    prompt = f"""
+    # ===== 新增：准备前端调用信息 =====
+    frontend_ui_info = ""
+    if frontend_calls_info and len(frontend_calls_info) > 0:
+        logger.info(f"检测到前端调用信息，共 {len(frontend_calls_info)} 个")
+        frontend_ui_info = "\n# Frontend UI Entry Points (前端UI入口信息)\n"
+        frontend_ui_info += "系统检测到以下API被前端调用，请在生成测试策略时优先考虑UI测试路径：\n\n"
+        frontend_ui_info += "🚨🚨🚨 **【强制规则】菜单路径信息使用规则** 🚨🚨🚨\n"
+        frontend_ui_info += "**这是最高优先级的规则，必须严格遵守！**\n\n"
+        frontend_ui_info += "1. **必须使用**：下方【前端调用】中的'菜单路径'字段（来自前端 menu.js 配置文件）\n"
+        frontend_ui_info += "2. **严禁使用**：后端 Java 代码注释中的任何菜单路径信息（如 '前端页面：xxx > xxx'）\n"
+        frontend_ui_info += "3. **原因说明**：前端配置文件是用户实际看到的菜单结构，后端注释经常过时或不准确\n"
+        frontend_ui_info += "4. **验证方法**：生成的测试步骤中的菜单路径必须与下方'菜单路径'字段完全一致\n\n"
+        frontend_ui_info += "**示例对比**：\n"
+        frontend_ui_info += "- ✅ 正确：'通过菜单\"报表中心 > 订单报告\"进入页面'（使用下方的菜单路径字段）\n"
+        frontend_ui_info += "- ❌ 错误：'通过菜单\"资产管理 > 订单报告\"进入页面'（使用了后端注释中的路径）\n\n"
+        
+        for idx, call_info in enumerate(frontend_calls_info, 1):
+            api_method = call_info.get('api_method', 'UNKNOWN')
+            api_path = call_info.get('api_path', '')
+            component_name = call_info.get('component_name', 'Unknown')
+            file_path = call_info.get('file_path', '')
+            line_number = call_info.get('line_number', 0)
+            menu_path = call_info.get('menu_path', '')
+            page_route = call_info.get('page_route', '')
+            trigger_element = call_info.get('trigger_element', '')
+            trigger_text = call_info.get('trigger_text', '')
+            
+            # 添加调试日志，确认菜单路径被正确提取
+            logger.info(f"[DEBUG] 前端调用 {idx}: API={api_method} {api_path}, 菜单路径={menu_path}")
+            
+            # 【关键日志】检查 /balanceManageHome 相关的API
+            is_target_api = '/balanceManageHome' in str(page_route) or 'balanceManageHome' in str(api_path)
+            if is_target_api:
+                logger.info(f"[AI分析器-关键] 🔍 检测到目标API: {api_method} {api_path}")
+                logger.info(f"[AI分析器-关键] 🔍 菜单路径: '{menu_path}'")
+                logger.info(f"[AI分析器-关键] 🔍 页面路由: '{page_route}'")
+                if menu_path and '企业信息' in menu_path:
+                    logger.error(f"[AI分析器-关键] ❌❌❌ 错误！菜单路径包含'企业信息': '{menu_path}' (应该是'准入授信')")
+                elif menu_path and '准入授信' in menu_path:
+                    logger.info(f"[AI分析器-关键] ✅ 正确！菜单路径包含'准入授信': '{menu_path}'")
+            
+            company_type = call_info.get('company_type', '')
+            company_type_name = call_info.get('company_type_name', '')
+            
+            # 添加端信息调试日志
+            logger.debug(f"[DEBUG] 前端调用 {idx}: 端类型={company_type}, 端名称={company_type_name}")
+            if company_type or company_type_name:
+                logger.info(f"[端信息提取] ✅ 前端调用 {idx}: 成功提取端信息 - {company_type_name} ({company_type})")
+            else:
+                logger.debug(f"[端信息提取] ⚠️ 前端调用 {idx}: 未找到端信息")
+            
+            frontend_ui_info += f"【前端调用 {idx}】\n"
+            frontend_ui_info += f"- API: {api_method} {api_path}\n"
+            frontend_ui_info += f"- 前端组件: {component_name}\n"
+            frontend_ui_info += f"- 文件位置: {file_path} (第{line_number}行)\n"
+            
+            if menu_path:
+                frontend_ui_info += f"- 菜单路径: {menu_path}\n"
+                logger.info(f"[DEBUG] ✅ 菜单路径已添加到 prompt: {menu_path}")
+                # 【关键日志】记录添加到prompt的菜单路径
+                if is_target_api:
+                    logger.info(f"[AI分析器-关键] ✅ 菜单路径已添加到prompt: '{menu_path}'")
+            else:
+                logger.warning(f"[DEBUG] ⚠️ 菜单路径为空！API={api_method} {api_path}")
+                if is_target_api:
+                    logger.error(f"[AI分析器-关键] ❌❌❌ 错误！目标API的菜单路径为空！")
+            
+            if page_route:
+                frontend_ui_info += f"- 页面路由: {page_route}\n"
+            if trigger_element and trigger_text:
+                frontend_ui_info += f"- 触发方式: 点击'{trigger_text}'{trigger_element}\n"
+            
+            # 添加端信息（如果存在）
+            if company_type and company_type_name:
+                frontend_ui_info += f"- 端类型: {company_type_name} ({company_type})\n"
+                logger.info(f"[DEBUG] ✅ 端信息已添加到 prompt: {company_type_name} ({company_type})")
+            
+            frontend_ui_info += "\n"
+        
+        frontend_ui_info += """
+## 前端调用测试策略生成规则（重要）
+
+### 🚨 规则 0：菜单路径信息强制使用规则（最高优先级，必须遵守）🚨
+
+**【关键规则】菜单路径信息的使用规则 - 这是强制性的，不可违反！**
+
+**必须执行的操作：**
+1. **查找菜单路径**：在上方【前端调用】信息中找到"菜单路径"字段
+2. **直接使用**：将该菜单路径原样复制到测试步骤中，不做任何修改
+3. **验证一致性**：确保测试步骤中的菜单路径与上方"菜单路径"字段完全一致
+
+**严禁执行的操作：**
+1. ❌ **禁止**使用后端 Java 代码注释中的任何菜单路径信息
+2. ❌ **禁止**使用注释中类似"前端页面：xxx > xxx"的内容
+3. ❌ **禁止**自己推测或修改菜单路径
+4. ❌ **禁止**混合使用前端配置和后端注释的信息
+
+**原因说明：**
+- 前端 menu.js 配置文件是用户实际看到的菜单结构（真实数据）
+- 后端代码注释经常过时、不准确或被遗忘更新（不可信数据）
+- 测试必须基于用户实际操作路径，而不是开发者的注释
+
+**强制示例对比：**
+假设上方【前端调用】中显示：
+```
+- 菜单路径: 报表中心 > 订单报告
+```
+
+后端代码注释中写着：
+```java
+// 前端页面：资产管理 > 订单报告
+```
+
+**你必须这样做：**
+- ✅ 正确：测试步骤写"通过菜单\"报表中心 > 订单报告\"进入页面"
+- ❌ 错误：测试步骤写"通过菜单\"资产管理 > 订单报告\"进入页面"
+
+**验证方法：**
+生成测试策略后，检查测试步骤中的菜单路径是否与上方【前端调用】中的"菜单路径"字段完全一致。
+
+---
+
+当API被前端调用时，测试策略应该包含UI测试路径：
+
+### 规则 1：测试步骤格式
+对于有前端调用的API，测试步骤应该包含：
+1. **访问页面**：说明如何通过菜单路径访问到目标页面（**必须使用上方【前端调用】中的"菜单路径"字段，不要使用后端注释**）
+2. **定位元素**：说明需要点击或操作的UI元素（如"点击'搜索'按钮"）
+3. **执行操作**：说明具体的操作步骤（如"输入订单号，点击查询"）
+4. **验证API调用**：说明验证API被正确调用（如"验证 GET /api/orders/list 被调用"）
+5. **验证UI反馈**：说明验证UI的反馈（如"验证订单列表正确显示"）
+
+### 规则 2：Payload格式
+- 如果有前端调用信息，Payload应该基于前端传递的参数
+- 如果前端通过表单提交，说明表单字段
+- 如果前端通过URL参数，说明URL参数格式
+
+### 规则 3：验证点
+- 除了API响应验证，还要包含UI状态验证
+- 如：加载状态、成功提示、错误提示、数据展示等
+
+### 规则 4：无前端调用的API
+- 如果API没有前端调用信息，按照原有的接口测试方式生成测试策略
+- 测试步骤应该是直接调用API接口，而不是UI操作
+
+### 示例对比
+
+**有前端调用的API测试步骤（使用前端配置的菜单路径）**：
+1. 访问页面：通过菜单"报表中心 > 订单报告"进入订单报告页面（**使用前端调用信息中的菜单路径**）
+2. 定位元素：找到页面上的"查询"按钮
+3. 执行操作：输入订单号"ORD-12345"，点击"查询"按钮
+4. 验证API调用：验证 GET /api/orders/{orderId}/detail-report 被正确调用
+5. 验证UI反馈：验证订单详细报告正确显示，包含订单信息、客户信息、支付信息等
+
+**无前端调用的API测试步骤**：
+1. 调用 service-a 的订单创建接口（例如 POST /api/orders），传入订单数据
+2. 验证 service-a 成功创建订单，返回 orderId
+3. 验证 service-a 的日志包含订单创建记录
+
+### 🚨 规则 5：端信息使用规则（重要）🚨
+
+**如果上方【前端调用】中提供了"端类型"字段，必须遵守以下规则：**
+
+1. **测试用例标题格式**：
+   - ✅ 正确格式：`{端名称} - {菜单名称} - {功能描述}`
+   - ✅ 示例：`核心企业端 - 融资还款 - 还款管理页面分页查询功能`
+   - ❌ 错误格式：`UI测试 - 融资还款菜单 - 还款管理页面分页查询功能`（不要使用"UI测试"前缀）
+
+2. **测试步骤中的端信息**：
+   - 在"访问页面"步骤中，必须说明使用的端类型
+   - ✅ 正确：`使用{端名称}账号登录系统，通过菜单"{菜单路径}"进入页面`
+   - ✅ 示例：`使用核心企业端账号登录系统，通过菜单"融资还款"进入页面`
+   - ❌ 错误：`用户已登录系统，通过菜单"融资还款"进入页面`（没有说明端类型）
+
+3. **端类型说明**：
+   - `核心企业端 (CE)`：核心企业用户使用的端
+   - `供应商端 (SPY)`：供应商用户使用的端
+   - `资金方端 (CPT)`：资金方用户使用的端
+
+4. **如果未提供端类型**：
+   - 使用默认格式：`UI测试 - {菜单名称} - {功能描述}`
+   - 测试步骤中不强制要求说明端类型
+
+**重要**：端信息是从前端菜单配置文件中自动识别的，比后端注释更准确，必须优先使用。
+
+### 🚨 规则 6：测试用例端口信息继承规则（重要）🚨
+
+**如果一个 API 有前端调用信息（即上方【前端调用】部分不为空），那么针对这个 API 生成的所有测试用例都必须包含端口信息：**
+
+1. **主测试用例**：为每个前端调用生成一个主测试用例（这些用例已经有端口信息）
+   - 示例：`核心企业端 - 融资还款 - 还款管理页面分页查询功能`
+   - 示例：`资金方端 - 还款管理 - 还款管理页面分页查询功能`
+
+2. **衍生测试用例**：参数校验、边界测试、回归测试等，**必须继承端口信息**
+   - ✅ 正确：`核心企业端 - 还款管理页面分页查询 - 参数校验（页码小于1）`
+   - ❌ 错误：`还款管理页面分页查询 - 参数校验（页码小于1）`（缺少端口信息）
+
+**继承规则：**
+- 如果 API 有多个前端调用（多个端口），衍生测试用例应该使用**第一个端口**的信息
+- 如果 API 只有一个前端调用，衍生测试用例直接继承该端口信息
+- 如果 API 没有前端调用信息，衍生测试用例不需要端口信息（保持原有行为）
+
+**示例对比：**
+
+假设 API `POST /order-scfPc-web/ofRepayment/paymentManagementPage` 有 2 个前端调用：
+- 前端调用 1：核心企业端 - 融资还款
+- 前端调用 2：资金方端 - 还款管理
+
+**正确的测试用例列表：**
+1. ✅ `核心企业端 - 融资还款 - 还款管理页面分页查询功能`（主测试用例 1）
+2. ✅ `资金方端 - 还款管理 - 还款管理页面分页查询功能`（主测试用例 2）
+3. ✅ `核心企业端 - 还款管理页面分页查询 - 参数校验（页码小于1）`（衍生测试用例，继承第一个端口）
+4. ✅ `核心企业端 - 还款管理页面分页查询 - 参数校验（每页大小超出范围）`（衍生测试用例，继承第一个端口）
+5. ✅ `核心企业端 - 通用余额管理列表分页查询接口回归测试`（回归测试，继承第一个端口）
+
+**错误的测试用例列表：**
+1. ✅ `核心企业端 - 融资还款 - 还款管理页面分页查询功能`（主测试用例 1）
+2. ✅ `资金方端 - 还款管理 - 还款管理页面分页查询功能`（主测试用例 2）
+3. ❌ `还款管理页面分页查询 - 参数校验（页码小于1）`（缺少端口信息）
+4. ❌ `还款管理页面分页查询 - 参数校验（每页大小超出范围）`（缺少端口信息）
+5. ❌ `通用余额管理列表分页查询接口回归测试`（缺少端口信息）
+
+---
+
+请根据上述规则生成测试策略，**特别注意：必须使用前端调用信息中提供的菜单路径和端信息，不要使用后端代码注释中的信息**。
+"""
+        
+        console.print(f"[Info] 前端调用信息已准备完成，共 {len(frontend_calls_info)} 个API", style="green")
+        update_task_log(task_id, f"[Frontend UI Analysis] 检测到 {len(frontend_calls_info)} 个前端调用")
+        
+        # 不需要转义 frontend_ui_info，因为我们将使用 .format() 而不是 f-string
+    else:
+        logger.info("未检测到前端调用信息，将使用默认的接口测试策略")
+    # ===== 新增结束 =====
+    
+    # 添加调试日志
+    logger.info(f"[DEBUG] 准备构建 prompt，变量检查:")
+    logger.info(f"[DEBUG]   static_context 长度: {len(static_context) if static_context else 0}")
+    logger.info(f"[DEBUG]   affected_apis_str 长度: {len(affected_apis_str) if affected_apis_str else 0}")
+    logger.info(f"[DEBUG]   frontend_ui_info 长度: {len(frontend_ui_info) if frontend_ui_info else 0}")
+    logger.info(f"[DEBUG]   controller_params_info 长度: {len(controller_params_info) if controller_params_info else 0}")
+    
+    # 输出 frontend_ui_info 的内容以便调试（已注释，避免日志过多）
+    # if frontend_ui_info:
+    #     logger.info(f"[DEBUG] frontend_ui_info 内容:\n{frontend_ui_info}")
+    
+    try:
+        prompt = """
     # Role
     你是一名资深的 Java 测试架构师，精通微服务调用链路分析、代码变更影响评估、测试策略设计。
 
+    # 🚨 重要提示：前端UI测试优先规则 🚨
+    
+    **在生成测试策略之前，必须先检查 [Frontend UI Entry Points] 部分！**
+    
+    - ✅ **如果存在前端调用信息**：必须生成UI测试步骤，包含：
+      1. 访问页面（使用菜单路径，如"通过菜单'资产管理 > 订单管理'进入页面"）
+      2. 定位元素（使用触发元素，如"找到'查询'按钮"）
+      3. 执行操作（如"输入订单号，点击查询"）
+      4. 验证API调用（如"验证 POST /api/orders/summary 被调用"）
+      5. 验证UI反馈（如"验证订单汇总信息正确显示"）
+    
+    - ❌ **如果不存在前端调用信息**：生成接口测试步骤
+    
+    **禁止**：有前端调用信息却生成接口测试！
+    
     # Static Analysis Hints (Hard Facts - 静态分析结果)
     {static_context}
     注意: 
@@ -761,6 +1327,8 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     {affected_apis_str}
     请重点关注这些 API 的回归测试。
     
+    {frontend_ui_info}
+    
     {controller_params_info}
     
     ## 参数提取规则（严格遵守，按优先级执行）
@@ -768,7 +1336,7 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     ### 优先级 1：从 Git Diff 中提取（如果 Controller 代码在本次变更中）
     1. 定位到 Controller 方法（带有 @GetMapping/@PostMapping/@PutMapping/@DeleteMapping 注解）
     2. 提取方法参数及其注解：
-       - `@PathVariable`：参数在 URL 路径中（如 `/{{orderId}}`）
+       - `@PathVariable`：参数在 URL 路径中（如 `/{{{{orderId}}}}`）
        - `@RequestParam`：参数通过 Query String 或 Form Data 传递
        - `@RequestBody`：参数通过 JSON Body 传递
     3. **严禁**从 Service 层或其他非 Controller 方法推断参数
@@ -790,16 +1358,16 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     4. 如果方法没有 @RequestParam 或 @RequestBody 参数，Payload 留空或标注"无参数"
     
     ### 示例
-    - ✅ 正确：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId` → Payload: 无（orderId 已在 URL 中）
+    - ✅ 正确：`@GetMapping("/{{{{orderId}}}}")` + `@PathVariable Long orderId` → Payload: 无（orderId 已在 URL 中）
     - ❌ 错误：从 `createOrder(Long userId, String productName, BigDecimal amount)` 推断 `getOrder` 的参数
     
     ## 参数格式规范（严格遵守）
     
     ### 规则 1：@PathVariable（路径参数）
-    - **定义**：参数在 URL 路径中（如 `/{{orderId}}`）
+    - **定义**：参数在 URL 路径中（如 `/{{{{orderId}}}}`）
     - **Payload**：无（参数已在 URL 中，不需要在 Payload 中重复）
     - **示例**：
-      - 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+      - 代码：`@GetMapping("/{{{{orderId}}}}")` + `@PathVariable Long orderId`
       - URL：`GET /api/orders/123`
       - Payload：无
     
@@ -819,16 +1387,16 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     ### 规则 3：@RequestBody（请求体参数）
     - **定义**：参数通过 JSON Body 传递
     - **适用于**：POST/PUT 方法
-    - **Payload 格式**：`{{"key1": "value1", "key2": "value2"}}`
+    - **Payload 格式**：`{{{{"key1": "value1", "key2": "value2"}}}}`
     - **示例**：
       - 代码：`@PostMapping("/create")` + `@RequestBody OrderDTO dto`
       - URL：`POST /api/orders/create`
-      - Payload：`{{"userId": 123, "productName": "Product A", "amount": 100.00}}`
+      - Payload：`{{{{"userId": 123, "productName": "Product A", "amount": 100.00}}}}`
     
     ### 规则 4：混合参数
     - **定义**：同时使用 @PathVariable、@RequestParam、@RequestBody
     - **示例**：
-      - 代码：`@PutMapping("/{{orderId}}/status")` + `@PathVariable Long orderId, @RequestParam Integer status`
+      - 代码：`@PutMapping("/{{{{orderId}}}}/status")` + `@PathVariable Long orderId, @RequestParam Integer status`
       - URL：`PUT /api/orders/123/status?status=1`
       - Payload：`?status=1`（orderId 已在 URL 中）
     
@@ -866,7 +1434,7 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     3. 或者根据你的Java知识，推断出被调用方（即使未出现在变更列表中）不太可能隐式支持该新参数；
     
     **必须**在 `risks` 和 `code_review_warning` 中**明确断定**：
-    "**兼容性 (CRITICAL)**: 检测到接口签名不匹配！调用方 `{{Caller}}` 传递了新参数，但服务端 `{{Provider}}` 未修改接口签名以接收该参数。这将导致运行时 `NoSuchMethodError` 或请求参数解析失败，核心功能**必挂无疑**。"
+    "**兼容性 (CRITICAL)**: 检测到接口签名不匹配！调用方 `{{{{Caller}}}}` 传递了新参数，但服务端 `{{{{Provider}}}}` 未修改接口签名以接收该参数。这将导致运行时 `NoSuchMethodError` 或请求参数解析失败，核心功能**必挂无疑**。"
     
     禁止使用"可能"、"如果"等模棱两可的词汇，必须使用"确定"、"必挂"等强语气词汇来警示开发人员。
 
@@ -1007,16 +1575,16 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     2. **测试用例格式**：
        - title: "跨服务调用测试 - [目标方法] (需要单元测试或新增接口)"
        - priority: "P0"
-       - steps: "说明：[目标方法] 会调用 [跨服务方法]，但该方法没有对应的 HTTP 接口。建议：1. 使用单元测试直接调用 [目标方法]；2. 或在 Controller 中新增接口暴露该方法。"
+       - steps: "说明：[目标方法] 会调用 [跨服务方法]，但该方法没有对应的 HTTP 接口。建议：\n1. 使用单元测试直接调用 [目标方法]\n2. 或在 Controller 中新增接口暴露该方法"
        - payload: "单元测试示例：notificationService.sendOrderNotification(123L)"
        - validation: "验证 [跨服务方法] 被正确调用，且返回预期结果。"
     
     3. **具体示例**：
        - title: "跨服务调用测试 - NotificationService.sendOrderNotification(Long) (需要单元测试或新增接口)"
        - priority: "P0"
-       - steps: "说明：NotificationService.sendOrderNotification(Long orderId) 方法会调用 service-a 的 getOrderStatusText 接口，但该方法没有对应的 HTTP 接口（现有的 POST /api/notifications/order 接口调用的是另一个重载方法 sendOrderNotification(Long, String)，不会触发跨服务调用）。建议：1. 使用单元测试直接调用 notificationService.sendOrderNotification(123L)；2. 或在 NotificationController 中新增接口，如 POST /api/notifications/order-by-id?orderId=123。"
+       - steps: "说明：NotificationService.sendOrderNotification(Long orderId) 方法会调用 service-a 的 getOrderStatusText 接口，但该方法没有对应的 HTTP 接口（现有的 POST /api/notifications/order 接口调用的是另一个重载方法 sendOrderNotification(Long, String)，不会触发跨服务调用）。建议：\n1. 使用单元测试直接调用 notificationService.sendOrderNotification(123L)\n2. 或在 NotificationController 中新增接口，如 POST /api/notifications/order-by-id?orderId=123"
        - payload: "单元测试示例：notificationService.sendOrderNotification(123L)"
-       - validation: "验证 service-a 的 GET /api/orders/{{orderId}}/status-text 接口被正确调用，且返回的状态描述（如 '待支付'）被正确使用。"
+       - validation: "验证 service-a 的 GET /api/orders/{{{{orderId}}}}/status-text 接口被正确调用，且返回的状态描述（如 '待支付'）被正确使用。"
     
     ### 规则 3：严禁生成错误的 HTTP 接口测试用例
     1. **严禁**使用不会触发目标逻辑的 HTTP 接口进行测试
@@ -1062,6 +1630,22 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     - line_number/call_snippet 无数据 → 填"无"；
     - affected_apis 无受影响API → 数组留空（[]）；
     - downstream_dependency 无依赖 → 数组留空（[]）。
+    8. **代码元素描述规范**（提升可读性）：
+    在描述代码元素时，**必须明确标注其类型**，避免用户混淆：
+    - **类（Class）**：在类名后添加"类"，如"NotificationService 类"、"OrderServiceImpl 类"
+    - **接口（Interface）**：在接口名后添加"接口"，如"OrderService 接口"
+    - **方法（Method）**：在方法名后添加"方法"或使用括号，如"getOrderSummary() 方法"、"sendNotification() 方法"
+    - **Controller**：在类名后添加"Controller"或"控制器类"，如"NotificationController 控制器"
+    - **DTO/实体类**：在类名后添加"DTO 类"或"实体类"，如"OrderDTO 类"、"User 实体类"
+    - **Client/Feign 接口**：在类名后添加"Feign 客户端"或"HTTP 客户端"，如"UserClient Feign 客户端"
+    
+    **示例对比**：
+    - ❌ 错误："service-b 中的 NotificationService 明确调用了 orderService.getOrderSummary(orderId) 方法"
+    - ✅ 正确："service-b 中的 NotificationService 类明确调用了 orderService.getOrderSummary(orderId) 方法"
+    - ✅ 正确："service-a 中的 OrderService 接口新增了 getOrderSummary() 方法"
+    - ✅ 正确："NotificationController 控制器暴露了 POST /api/notifications/order-summary 接口"
+    
+    **适用场景**：在 `cross_service_impact`、`functional_impact`、`downstream_dependency` 等所有描述性字段中都应遵循此规范。
 
     ## 字段约束（必须严格遵守）
     ### 1. functional_impact 字段
@@ -1093,12 +1677,54 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     - affected_apis：仅列出本次变更直接影响的API，包含method/url/description，无则留空数组；
     - downstream_dependency：仅列出`Cross-Service Impact`中的服务，字段需精准（如caller_method需包含参数类型，如"transfer(String, BigDecimal)"）；
     - test_strategy：payload示例需贴合代码变更的真实参数，标注必填/选填，验证点需可量化。
-      - **关键要求（测试步骤）**：
-        1. **必须黑盒化**：测试人员无法直接"创建DTO"或"调用Java方法"。必须将内部代码逻辑映射为**外部可调用的 HTTP API**。
+      - **关键要求（前端UI测试 vs 接口测试）**：
+        1. **必须检查 [Frontend UI Entry Points] 部分**：
+           - 如果该部分存在前端调用信息，**必须优先生成UI测试步骤**
+           - 如果该部分为空或不存在，则生成接口测试步骤
+        
+        2. **UI测试步骤格式（有前端调用时）**：
+           - 步骤1：访问页面（使用菜单路径，如"通过菜单'资产管理 > 订单管理'进入订单列表页面"）
+           - 步骤2：定位元素（使用触发元素信息，如"找到页面上的'搜索'按钮"）
+           - 步骤3：执行操作（如"输入订单号'ORD-12345'，点击'搜索'按钮"）
+           - 步骤4：验证API调用（如"验证 GET /api/orders/search?orderNo=ORD-12345 被正确调用"）
+           - 步骤5：验证UI反馈（如"验证订单列表正确显示查询结果"）
+           - **Payload格式**：基于前端传递的参数，如果前端通过表单提交，说明表单字段
+           - **验证点**：除了API响应验证，还要包含UI状态验证（加载状态、成功提示、错误提示、数据展示等）
+        
+        3. **接口测试步骤格式（无前端调用时）**：
+           - 步骤1：调用接口（如"调用 service-a 的订单创建接口 POST /api/orders"）
+           - 步骤2：传入参数（如"传入订单数据"）
+           - 步骤3：验证响应（如"验证 service-a 成功创建订单，返回 orderId"）
+           - **Payload格式**：直接的API参数
+           - **验证点**：API响应验证
+        
+        4. **示例对比**：
+           - ✅ 有前端调用的API测试步骤：
+             ```
+             1. 访问页面：通过菜单"资产管理 > 订单管理"进入订单列表页面
+             2. 定位元素：找到页面上的"搜索"按钮
+             3. 执行操作：输入订单号"ORD-12345"，点击"搜索"按钮
+             4. 验证API调用：验证 GET /api/orders/search?orderNo=ORD-12345 被正确调用
+             5. 验证UI反馈：验证订单列表正确显示查询结果，包含订单号、状态、金额等信息
+             ```
+           
+           - ✅ 无前端调用的API测试步骤：
+             ```
+             1. 调用 service-a 的订单创建接口（例如 POST /api/orders），传入订单数据
+             2. 验证 service-a 成功创建订单，返回 orderId
+             3. 验证 service-a 的日志包含订单创建记录
+             ```
+        
+        5. **禁止**：
+           - ❌ 有前端调用信息却生成接口测试步骤
+           - ❌ 无前端调用信息却生成UI测试步骤
+           - ❌ "模拟业务场景"、"创建实例"、"调用set方法"等开发术语
+      
+      - **关键要求（测试步骤 - 黑盒化）**：
+        1. **必须黑盒化**：测试人员无法直接"创建DTO"或"调用Java方法"。必须将内部代码逻辑映射为**外部可调用的 HTTP API**或**UI操作**。
         2. **如果变更是内部类/DTO**：你必须结合 [Link Analysis] 和 [Deep API Trace] 找到触发该逻辑的上游 API（例如 `POST /ucenter/recharge`）。
-        3. **格式要求**：步骤必须写成"调用接口 A -> 传入参数 B -> 验证结果 C"。
-        4. **禁止**："模拟业务场景"、"创建实例"、"调用set方法"等开发术语。
-        5. **示例**：
+        3. **格式要求**：步骤必须写成"调用接口 A -> 传入参数 B -> 验证结果 C"或"访问页面 A -> 点击按钮 B -> 验证结果 C"。
+        4. **示例**：
            - ❌ 错误：在 PointManager 中创建 DTO，设置 riskLevel="HIGH"。
            - ✅ 正确：调用接口 `POST /ucenter/recharge/compensate`，传入参数 `amount=1000`（该金额会触发 HIGH 风险等级），验证响应成功。
       
@@ -1114,10 +1740,10 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
            - **如果 Controller 代码不在本次 Diff 中**：
              * **优先使用系统自动提取的参数信息**：如果 Prompt 中提供了 "Controller 参数信息" 部分，**必须直接使用其中的参数来生成 Payload，严禁写"需查看"、"需确认"等提示性文字**
              * **如果系统提供了参数信息（如 `@RequestParam String orderId`）**：
-               - ✅ **必须直接生成 Payload**：`?orderId=12345`（GET 请求）或 `{{"orderId": "12345"}}`（POST + @RequestBody）
+               - ✅ **必须直接生成 Payload**：`?orderId=12345`（GET 请求）或 `{{{{"orderId": "12345"}}}}`（POST + @RequestBody）
                - ❌ **严禁写**："需查看 `RechargeProvider.java` 中 `checkRechargeStatus` 方法的参数来确定"
                - ❌ **严禁写**："例如: `?orderId=12345` (需确认)"
-               - ✅ **正确写法**：直接写 `?orderId=12345` 或 `{{"orderId": "12345"}}`
+               - ✅ **正确写法**：直接写 `?orderId=12345` 或 `{{{{"orderId": "12345"}}}}`
              * 如果系统未提供参数信息，必须查看 [Deep API Trace] 中提到的 Controller 文件路径
              * 从调用链信息（如 `RechargeProvider.checkRechargeStatus`）推断 Controller 类和方法
              * 如果确实无法确定参数，Payload 应写为："需查看 Controller 代码确认参数（建议查看 [Deep API Trace] 中提到的 Controller 文件）"
@@ -1129,7 +1755,7 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
            - [Deep API Trace] 发现：`GET /api/user/info` 调用了此方法
            - Controller 定义：`@GetMapping("/api/user/info") public Result getUserInfo(@RequestParam String userId)`
            - ✅ 正确 Payload：`?userId=456`（使用 Controller 的参数 `userId`）
-           - ❌ 错误 Payload：`{{"id": 123}}`（使用了内部方法的参数 `id`）
+           - ❌ 错误 Payload：`{{{{"id": 123}}}}`（使用了内部方法的参数 `id`）
            - ✅ 正确步骤：`调用 GET /api/user/info?userId=456，该接口内部会调用 UserService.getUserById(456L)`
         
         3. **如果 [Deep API Trace] 未找到 Controller 接口**：
@@ -1152,7 +1778,7 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
         
         2. **参数格式必须与 HTTP 方法和注解匹配**：
            - **@PathVariable**：
-             * 参数在 URL 路径中（如 `/api/orders/{{orderId}}`）
+             * 参数在 URL 路径中（如 `/api/orders/{{{{orderId}}}}`）
              * Payload：无（参数已在 URL 中）
              * 测试步骤：`调用 GET /api/orders/123`
              * ❌ 错误：`?orderId=123`（不应使用 Query String）
@@ -1162,47 +1788,47 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
              * 参数通过 **URL Query String** 传递
              * Payload 格式：`?orderId=12345` 或 `?userId=100&status=active`
              * 测试步骤：`调用 GET /api/path?orderId=12345`
-             * ❌ 错误：`{{"orderId": "12345"}}`（JSON Body 格式）
+             * ❌ 错误：`{{{{"orderId": "12345"}}}}`（JSON Body 格式）
              * ✅ 正确：`?orderId=12345`（Query String 格式）
          
            - **@RequestParam + POST/PUT 请求**：
              * 参数通过 **URL Query String** 或 **Form Data** 传递（不是 JSON Body）
              * Payload 格式：`?key=value` 或 Form Data
              * 测试步骤：`调用 POST /api/path?orderId=12345`
-             * ❌ 错误：`{{"orderId": "12345"}}`（JSON Body 格式）
+             * ❌ 错误：`{{{{"orderId": "12345"}}}}`（JSON Body 格式）
              * ✅ 正确：`?orderId=12345`（Query String 格式）
            
            - **@RequestBody + POST/PUT 请求**：
              * 参数通过 **JSON Body** 传递
-             * Payload 格式：`{{"key": "value"}}`（JSON 对象）
-             * 测试步骤：`调用 POST /api/path，Body 为 {{"orderId": "12345"}}`
+             * Payload 格式：`{{{{"key": "value"}}}}`（JSON 对象）
+             * 测试步骤：`调用 POST /api/path，Body 为 {{{{"orderId": "12345"}}}}`
              * ❌ 错误：`?orderId=12345`（Query String 格式）
-             * ✅ 正确：`{{"orderId": "12345"}}`（JSON Body 格式）
+             * ✅ 正确：`{{{{"orderId": "12345"}}}}`（JSON Body 格式）
         
         3. **Payload 示例格式规范**：
            - @PathVariable → 无 Payload（参数在 URL 路径中）
            - GET/DELETE + @RequestParam → `?paramName=value`（Query String）
            - POST/PUT + @RequestParam → `?paramName=value`（Query String，不是 JSON Body）
-           - POST/PUT + @RequestBody → `{{"fieldName": "value"}}`（JSON 对象）
-           - 必须标注必填/选填：`{{"orderId": "12345" (必填, 示例值)}}`
+           - POST/PUT + @RequestBody → `{{{{"fieldName": "value"}}}}`（JSON 对象）
+           - 必须标注必填/选填：`{{{{"orderId": "12345" (必填, 示例值)}}}}`
            - 如果参数在 URL 路径中（@PathVariable），在 steps 中说明，payload 中不重复
         
         4. **验证示例**：
-           - 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+           - 代码：`@GetMapping("/{{{{orderId}}}}")` + `@PathVariable Long orderId`
            - ✅ 正确 URL：`GET /api/orders/123`
            - ✅ 正确 Payload：无
            - ❌ 错误 Payload：`?orderId=123`（@PathVariable 不需要 Query String）
            
            - 代码：`@GetMapping("/status")` + `@RequestParam String orderId`
            - ✅ 正确 Payload：`?orderId=12345`（Query String）
-           - ❌ 错误 Payload：`{{"orderId": "12345"}}`（GET 请求不应使用 JSON Body）
+           - ❌ 错误 Payload：`{{{{"orderId": "12345"}}}}`（GET 请求不应使用 JSON Body）
            
            - 代码：`@PostMapping("/order")` + `@RequestParam Long userId, @RequestParam String orderNumber`
            - ✅ 正确 Payload：`?userId=789&orderNumber=ORD-12345`（Query String）
-           - ❌ 错误 Payload：`{{"userId": 789, "orderNumber": "ORD-12345"}}`（@RequestParam 不使用 JSON Body）
+           - ❌ 错误 Payload：`{{{{"userId": 789, "orderNumber": "ORD-12345"}}}}`（@RequestParam 不使用 JSON Body）
            
            - 代码：`@PostMapping("/create")` + `@RequestBody OrderDTO dto`
-           - ✅ 正确 Payload：`{{"userId": 123, "amount": 100.00}}`（JSON Body）
+           - ✅ 正确 Payload：`{{{{"userId": 123, "amount": 100.00}}}}`（JSON Body）
            - ❌ 错误 Payload：`?userId=123&amount=100.00`（@RequestBody 不使用 Query String）
 
     ## 禁止示例（以下回答无效）
@@ -1213,36 +1839,36 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
     5. 编造不存在的服务名称："service_name": "PaymentService"（不在项目服务列表中）；
     6. **参数提取错误**：
        - 从 Service 层推断 Controller 参数：
-         * 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+         * 代码：`@GetMapping("/{{{{orderId}}}}")` + `@PathVariable Long orderId`
          * ❌ 错误：从 `createOrder(Long userId, String productName, BigDecimal amount)` 推断出 `?userId=456&productName=SampleProduct&amount=100.00`
          * ✅ 正确：无 Payload（orderId 已在 URL 中）
     
     7. **参数格式错误**：
        - @PathVariable 误用 Query String：
-         * 代码：`@GetMapping("/{{orderId}}")` + `@PathVariable Long orderId`
+         * 代码：`@GetMapping("/{{{{orderId}}}}")` + `@PathVariable Long orderId`
          * ❌ 错误 Payload：`?orderId=123`
          * ✅ 正确：无 Payload（参数在 URL 中：`/api/orders/123`）
        
        - @RequestParam 误用 JSON Body：
          * 代码：`@PostMapping("/order")` + `@RequestParam Long userId, @RequestParam String orderNumber`
-         * ❌ 错误 Payload：`{{"userId": 789, "orderNumber": "ORD-12345"}}`
+         * ❌ 错误 Payload：`{{{{"userId": 789, "orderNumber": "ORD-12345"}}}}`
          * ✅ 正确 Payload：`?userId=789&orderNumber=ORD-12345`
        
        - @RequestBody 误用 Query String：
          * 代码：`@PostMapping("/create")` + `@RequestBody OrderDTO dto`
          * ❌ 错误 Payload：`?userId=123&amount=100.00`
-         * ✅ 正确 Payload：`{{"userId": 123, "amount": 100.00}}`
+         * ✅ 正确 Payload：`{{{{"userId": 123, "amount": 100.00}}}}`
     
     8. **参数名错误**：
-       - 代码：`@RequestParam String orderId` → ❌ 错误 Payload：`{{"rechargeId": "12345"}}`（参数名错误）
-       - 代码：`@GetMapping("/status")` + `@RequestParam String orderId` → ❌ 错误 Payload：`{{"orderId": "12345"}}`（GET 请求不应使用 JSON Body，应使用 Query String：`?orderId=12345`）
+       - 代码：`@RequestParam String orderId` → ❌ 错误 Payload：`{{{{"rechargeId": "12345"}}}}`（参数名错误）
+       - 代码：`@GetMapping("/status")` + `@RequestParam String orderId` → ❌ 错误 Payload：`{{{{"orderId": "12345"}}}}`（GET 请求不应使用 JSON Body，应使用 Query String：`?orderId=12345`）
        - ✅ 正确：从代码中提取准确参数名 `orderId`，GET 请求使用 `?orderId=12345` 格式。
     
     9. **内部方法变更时使用错误的参数**：
        - 变更：`UserService.getUserById(Long id)`（内部方法，无 HTTP 接口）
        - [Deep API Trace] 发现：`GET /api/user/info` 调用了此方法
        - Controller：`@GetMapping("/api/user/info") public Result getUserInfo(@RequestParam String userId)`
-       - ❌ 错误 Payload：`{{"id": 123}}`（使用了内部方法的参数 `id`，而不是 Controller 的参数 `userId`）
+       - ❌ 错误 Payload：`{{{{"id": 123}}}}`（使用了内部方法的参数 `id`，而不是 Controller 的参数 `userId`）
        - ✅ 正确 Payload：`?userId=456`（使用 Controller 接口的参数 `userId`）
     
     10. **代码逻辑分析错误**：
@@ -1284,6 +1910,59 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
         - ❌ 错误验证点：验证响应包含 "已支付" 状态描述
         - 原因：该方法不会调用 `getOrderStatusText`，响应消息是固定格式，不包含状态描述
         - ✅ 正确：根据实际方法实现生成验证点
+    
+    13. **前端UI测试生成错误**：
+        **错误示例 A：有前端调用却生成接口测试**
+        - [Frontend UI Entry Points] 显示：
+          ```
+          【前端调用 1】
+          - API: POST /api/orders/summary
+          - 前端组件: orderManage
+          - 菜单路径: 资产管理 > 订单管理
+          - 触发方式: 点击'查询'按钮
+          ```
+        - ❌ 错误测试步骤：
+          ```
+          1. 调用 POST /api/orders/summary 接口
+          2. 传入参数 {"orderId": "123"}
+          3. 验证响应状态码为 200
+          ```
+        - ✅ 正确测试步骤：
+          ```
+          1. 访问页面：通过菜单"资产管理 > 订单管理"进入订单管理页面
+          2. 定位元素：找到页面上的"查询"按钮
+          3. 执行操作：输入订单号"123"，点击"查询"按钮
+          4. 验证API调用：验证 POST /api/orders/summary 被正确调用
+          5. 验证UI反馈：验证订单汇总信息正确显示在页面上
+          ```
+        
+        **错误示例 B：无前端调用却生成UI测试**
+        - [Frontend UI Entry Points] 为空或不存在
+        - ❌ 错误测试步骤：
+          ```
+          1. 访问页面：通过菜单进入订单管理页面
+          2. 点击按钮...
+          ```
+        - ✅ 正确测试步骤：
+          ```
+          1. 调用 POST /api/orders 接口
+          2. 传入订单数据
+          3. 验证响应成功
+          ```
+        
+        **错误示例 C：忽略前端调用信息中的菜单路径和触发元素**
+        - [Frontend UI Entry Points] 提供了完整的菜单路径和触发元素
+        - ❌ 错误测试步骤：
+          ```
+          1. 访问订单管理页面
+          2. 点击按钮
+          ```
+        - ✅ 正确测试步骤：
+          ```
+          1. 访问页面：通过菜单"资产管理 > 订单管理"进入订单管理页面
+          2. 定位元素：找到页面上的"查询"按钮
+          3. 执行操作：点击"查询"按钮
+          ```
 
     请严格按照以下 JSON 格式返回（字段不可缺失，值为字符串的需用双引号包裹）：
     {{
@@ -1333,16 +2012,37 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
             }}
         ],
         "test_strategy": [
-            {{
+            {{{{
                 "title": "<测试场景（如：正常转账-金额100元）>",
                 "priority": "P0/P1",
                 "steps": "<详细测试步骤：包含前置条件、操作步骤（如接口调用、参数设置）。**务必使用 [Deep API Trace] 中识别到的真实 API 路径**>",
                 "payload": "<Payload示例：**如果系统提供了 Controller 参数信息，必须直接使用其中的参数名生成 Payload**。GET/DELETE请求使用Query String格式（如 ?orderId=12345），POST/PUT请求根据@RequestParam或@RequestBody使用对应格式。参数名必须与代码中的变量名完全一致，严禁编造。**严禁写\\"需查看\\"、\\"需确认\\"等提示性文字，必须直接生成实际的 Payload**。标注必填/选填>",
                 "validation": "<可量化的验证点>"
-            }}
+            }}}}
         ]
-    }}
+    }}}}
     """
+        
+        # 使用 replace 方法填充占位符，避免与 JSON 的花括号冲突
+        prompt = prompt.replace('{project_structure}', str(project_structure))
+        prompt = prompt.replace('{filename}', str(filename))
+        prompt = prompt.replace('{current_service}', str(current_service))
+        prompt = prompt.replace('{downstream_info}', str(downstream_info))
+        prompt = prompt.replace('{diff_content}', str(diff_content))
+        prompt = prompt.replace('{static_context}', str(static_context))
+        prompt = prompt.replace('{affected_apis_str}', str(affected_apis_str))
+        prompt = prompt.replace('{frontend_ui_info}', str(frontend_ui_info))
+        prompt = prompt.replace('{controller_params_info}', str(controller_params_info))
+        prompt = prompt.replace('{cross_project_context}', str(cross_project_impacts_formatted))
+        
+        logger.info("[DEBUG] Prompt 格式化完成")
+        
+    except Exception as e:
+        logger.error(f"[ERROR] 构建 prompt 失败: {e}")
+        logger.error(f"[ERROR] 错误类型: {type(e).__name__}")
+        import traceback
+        logger.error(f"[ERROR] 堆栈跟踪:\n{traceback.format_exc()}")
+        raise
     
     messages = [
         {"role": "system", "content": "你是一个能够进行精准测试分析的AI助手。请只输出 JSON。"},
@@ -1361,14 +2061,53 @@ def analyze_with_llm(filename, diff_content, root_dir, task_id=None, base_ref=No
         
     try:
         cleaned_content = response_content.strip()
-        if cleaned_content.startswith("```json"):
-            cleaned_content = cleaned_content[7:]
-        elif cleaned_content.startswith("```"):
-            cleaned_content = cleaned_content[3:]
-        if cleaned_content.endswith("```"):
-            cleaned_content = cleaned_content[:-3]
         
-        report_json = json.loads(cleaned_content.strip())
+        # 去除 markdown 代码块标记（更强健的处理）
+        # 处理 ```json 或 ``` 开头
+        if cleaned_content.startswith("```json"):
+            cleaned_content = cleaned_content[7:].strip()
+        elif cleaned_content.startswith("```"):
+            cleaned_content = cleaned_content[3:].strip()
+        
+        # 处理 ``` 结尾
+        if cleaned_content.endswith("```"):
+            cleaned_content = cleaned_content[:-3].strip()
+        
+        # 再次检查并去除可能的多余标记
+        lines = cleaned_content.split('\n')
+        # 去除开头的空行和 markdown 标记
+        while lines and (not lines[0].strip() or lines[0].strip().startswith('```')):
+            lines.pop(0)
+        # 去除结尾的空行和 markdown 标记
+        while lines and (not lines[-1].strip() or lines[-1].strip().startswith('```')):
+            lines.pop()
+        
+        cleaned_content = '\n'.join(lines)
+        
+        # 新增：尝试找到 JSON 的实际结束位置
+        # 如果 JSON 后面有额外内容，只保留 JSON 部分
+        try:
+            # 先尝试直接解析
+            report_json = json.loads(cleaned_content)
+        except json.JSONDecodeError as e:
+            # 如果失败，尝试找到 JSON 的实际结束位置
+            # 从错误位置往前找最后一个完整的 }
+            if e.msg == "Extra data":
+                # 截取到错误位置之前
+                cleaned_content = cleaned_content[:e.pos].rstrip()
+                # 确保以 } 结尾
+                if not cleaned_content.endswith('}'):
+                    # 找到最后一个 }
+                    last_brace = cleaned_content.rfind('}')
+                    if last_brace > 0:
+                        cleaned_content = cleaned_content[:last_brace + 1]
+                
+                # 再次尝试解析
+                report_json = json.loads(cleaned_content)
+            else:
+                # 其他 JSON 错误，直接抛出
+                raise
+        
         console.print(f"[Debug] AI Response Keys: {list(report_json.keys())}", style="dim")
         if 'business_rules' in report_json:
             console.print(f"[Debug] Business Rules count: {len(report_json['business_rules'])}", style="green")

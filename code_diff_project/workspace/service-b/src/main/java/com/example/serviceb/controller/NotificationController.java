@@ -56,4 +56,34 @@ public class NotificationController {
             @RequestParam String message) {
         return notificationService.sendBatchNotifications(users, message);
     }
+    
+    /**
+     * 【新增接口】发送订单详情通知
+     * 【完整调用链测试】HTTP API → Service → Dubbo RPC
+     * 
+     * 调用链：
+     * 1. HTTP: POST /api/notifications/order-details?orderId=123
+     * 2. Service: NotificationService.sendOrderDetailsNotification(123L)
+     * 3. Dubbo RPC: OrderService.getOrderDetails(123L) [service-a]
+     * 4. Dubbo RPC: OrderService.getOrderById(123L) [service-a]
+     */
+    @PostMapping("/order-details")
+    public String sendOrderDetailsNotification(@RequestParam Long orderId) {
+        return notificationService.sendOrderDetailsNotification(orderId);
+    }
+    
+    /**
+     * 【新增接口】发送订单摘要通知
+     * 【完整调用链测试】HTTP API → Service → Dubbo RPC
+     * 
+     * 调用链：
+     * 1. HTTP: POST /api/notifications/order-summary?orderId=123
+     * 2. Service: NotificationService.sendOrderSummaryNotification(123L)
+     * 3. Dubbo RPC: OrderService.getOrderSummary(123L) [service-a]
+     * 4. Dubbo RPC: OrderService.getOrderById(123L) [service-a]
+     */
+    @PostMapping("/order-summary")
+    public String sendOrderSummaryNotification(@RequestParam Long orderId) {
+        return notificationService.sendOrderSummaryNotification(orderId);
+    }
 }

@@ -321,7 +321,37 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
         >
             <Form form={form} layout="vertical" initialValues={{ sourceBranch: undefined, targetBranch: undefined, gitUrl: '' }} className="space-y-3">
                 
-                <Form.Item name="gitUrl" label="Git 仓库地址" rules={[{ required: true, message: '请输入 Git 地址' }]} className="mb-2">
+                <Form.Item 
+                    name="gitUrl" 
+                    label="Git 仓库地址" 
+                    rules={[
+                        { required: true, message: '请输入 Git 地址' },
+                        {
+                            validator: (_, value) => {
+                                if (!value || value.trim() === '') {
+                                    return Promise.resolve();
+                                }
+                                // 检查是否以 https:// 开头
+                                if (!value.trim().toLowerCase().startsWith('https://')) {
+                                    return Promise.reject(new Error('仅支持 HTTPS 协议的 Git 地址（如：https://github.com/username/repo.git）'));
+                                }
+                                // 检查是否是有效的 Git URL 格式
+                                const httpsPattern = /^https:\/\/[^\s/$.?#].[^\s]*\/[^\s/]+\/[^\s/]+/;
+                                if (!httpsPattern.test(value.trim())) {
+                                    return Promise.reject(new Error('Git 地址格式不正确，请输入完整的仓库地址'));
+                                }
+                                return Promise.resolve();
+                            }
+                        }
+                    ]} 
+                    className="mb-2"
+                    extra={
+                        <div style={{ marginTop: '4px', fontSize: '12px', color: '#8c8c8c' }}>
+                            <InfoCircleOutlined style={{ marginRight: '4px' }} />
+                            仅支持 HTTPS 协议的 Git 地址（如：https://github.com/username/repo.git）
+                        </div>
+                    }
+                >
                     <Input 
                         prefix={<GithubOutlined className="text-slate-400"/>} 
                         placeholder="https://github.com/username/repo.git"
@@ -367,10 +397,24 @@ const AnalysisConfigModal = ({ open, onClose, onSuccess }) => {
                                 onChange={setSelectedProjects}
                                 loading={fetchingProjects}
                                 disabled={fetchingBranches || !isValidGitUrl(form.getFieldValue('gitUrl'))}
-                                optionFilterProp="children"
-                                filterOption={(input, option) =>
-                                    option.children.toLowerCase().includes(input.toLowerCase())
-                                }
+                                showSearch
+                                filterOption={(input, option) => {
+                                    if (!input) return true;
+                                    const search = input.toLowerCase().trim();
+                                    const project = getSameOrgProjects().find(p => p.id === option.value);
+                                    if (!project) return false;
+                                    
+                                    // 支持搜索：项目名称、项目路径、Git URL
+                                    const projectName = (project.project_name || '').toLowerCase();
+                                    const projectPath = (project.project_path || '').toLowerCase();
+                                    const gitUrl = (project.git_url || '').toLowerCase();
+                                    const branch = (project.default_branch || '').toLowerCase();
+                                    
+                                    return projectName.includes(search) || 
+                                           projectPath.includes(search) || 
+                                           gitUrl.includes(search) ||
+                                           branch.includes(search);
+                                }}
                             >
                                 {getSameOrgProjects().map(project => (
                                     <Select.Option key={project.id} value={project.id}>

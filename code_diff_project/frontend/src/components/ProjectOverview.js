@@ -14,9 +14,10 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
         const groups = {};
         reports.forEach(r => {
             let key;
-            if (r.task) {
+            if (r.task && r.task.id) {
                 // Group by Task ID ONLY to avoid splitting due to analysis time diff
-                key = `Task #${r.task}`;
+                // task 现在是一个对象，需要使用 task.id
+                key = `Task #${r.task.id}`;
             } else {
                 // Fallback to fuzzy time grouping
                 const date = new Date(r.created_at);
@@ -95,18 +96,90 @@ const ProjectOverview = ({ projectName, reports = [], onSelectReport }) => {
                                                     const baseCommit = parts[0] ? parts[0].trim() : '';
                                                     const targetCommit = parts[1] ? parts[1].trim() : '';
                                                     
-                                                    const tooltipText = baseCommit && targetCommit 
-                                                        ? `对比的是 ${baseCommit}提交记录 到 ${targetCommit}提交记录 的变更`
-                                                        : "变更对比范围：基准提交 -> 目标提交";
+                                                    // 从 task 中获取 commit 详细信息
+                                                    const baseCommitMessage = groupReports[0]?.task?.base_commit_message || '';
+                                                    const baseCommitAuthor = groupReports[0]?.task?.base_commit_author || '';
+                                                    const baseCommitDate = groupReports[0]?.task?.base_commit_date || '';
+                                                    const targetCommitMessage = groupReports[0]?.task?.target_commit_message || '';
+                                                    const targetCommitAuthor = groupReports[0]?.task?.target_commit_author || '';
+                                                    const targetCommitDate = groupReports[0]?.task?.target_commit_date || '';
+                                                    
+                                                    // 构建详细的 tooltip 内容
+                                                    const tooltipContent = (
+                                                        <div className="space-y-3 text-xs">
+                                                            <div className="font-bold text-sm border-b border-slate-200 pb-2">提交对比信息</div>
+                                                            
+                                                            {/* 基准提交 */}
+                                                            <div className="space-y-1">
+                                                                <div className="font-semibold text-orange-400">基准提交 ({baseCommit})</div>
+                                                                {baseCommitMessage && (
+                                                                    <div className="pl-2 border-l-2 border-orange-200">
+                                                                        <div className="text-slate-200">
+                                                                            <span className="text-slate-400">提交信息：</span>{baseCommitMessage}
+                                                                        </div>
+                                                                        {baseCommitAuthor && (
+                                                                            <div className="text-slate-300">
+                                                                                <span className="text-slate-400">作者：</span>{baseCommitAuthor}
+                                                                            </div>
+                                                                        )}
+                                                                        {baseCommitDate && (
+                                                                            <div className="text-slate-300">
+                                                                                <span className="text-slate-400">时间：</span>{baseCommitDate}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            
+                                                            {/* 目标提交 */}
+                                                            <div className="space-y-1">
+                                                                <div className="font-semibold text-green-400">目标提交 ({targetCommit})</div>
+                                                                {targetCommitMessage && (
+                                                                    <div className="pl-2 border-l-2 border-green-200">
+                                                                        <div className="text-slate-200">
+                                                                            <span className="text-slate-400">提交信息：</span>{targetCommitMessage}
+                                                                        </div>
+                                                                        {targetCommitAuthor && (
+                                                                            <div className="text-slate-300">
+                                                                                <span className="text-slate-400">作者：</span>{targetCommitAuthor}
+                                                                            </div>
+                                                                        )}
+                                                                        {targetCommitDate && (
+                                                                            <div className="text-slate-300">
+                                                                                <span className="text-slate-400">时间：</span>{targetCommitDate}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            
+                                                            {!baseCommitMessage && !targetCommitMessage && (
+                                                                <div className="text-slate-400 text-center py-2">
+                                                                    暂无详细提交信息
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
 
                                                     return (
                                                         <span className="flex items-center gap-1">
                                                             <DeploymentUnitOutlined /> 
                                                             {commitRange}
                                                             <Tooltip 
-                                                                title={<span className="whitespace-nowrap text-xs">{tooltipText}</span>}
-                                                                placement="top"
-                                                                overlayInnerStyle={{ width: 'max-content', maxWidth: 'none' }}
+                                                                title={tooltipContent}
+                                                                placement="bottomRight"
+                                                                overlayInnerStyle={{ 
+                                                                    width: 'max-content', 
+                                                                    maxWidth: '500px',
+                                                                    backgroundColor: '#1e293b',
+                                                                    borderRadius: '8px',
+                                                                    padding: '12px'
+                                                                }}
+                                                                overlayStyle={{
+                                                                    zIndex: 9999
+                                                                }}
+                                                                color="#1e293b"
+                                                                getPopupContainer={(trigger) => document.body}
                                                             >
                                                                 <InfoCircleOutlined className="text-indigo-700 cursor-help hover:text-indigo-900 ml-1" />
                                                             </Tooltip>

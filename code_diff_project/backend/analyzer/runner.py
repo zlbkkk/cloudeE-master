@@ -23,9 +23,13 @@ from analyzer.analysis import (
     ApiUsageTracer,
     MultiProjectTracer
 )
+from analyzer.analysis.frontend_discovery import FrontendProjectDiscovery
+from analyzer.analysis.frontend_api_scanner import FrontendApiScanner
+from analyzer.analysis.frontend_backend_mapper import FrontendBackendMapper, BackendApi
+from analyzer.analysis.test_case_generator import TestCaseGenerator
 
-# 初始化 Rich Console
-console = Console()
+# 初始化 Rich Console（禁用Unicode字符，避免Windows终端乱码）
+console = Console(legacy_windows=True, force_terminal=True)
 
 # --- DeepSeek API 配置 ---
 USE_DEEPSEEK_API = True
@@ -47,6 +51,74 @@ def run_analysis(project_root=None, base_ref='HEAD^', target_ref='HEAD', task_id
     # 1. 确定项目根目录
     if not project_root:
         project_root = os.path.abspath(os.path.join(settings.BASE_DIR, '..', '..'))
+    
+    # ===== 前端项目扫描（使用workspace中已存在的代码）=====
+    # 注意：前端项目的拉取由 views.py 中的 trigger_analysis 处理
+    # 这里只负责扫描 workspace 中已存在的前端项目
+    frontend_projects = []
+    frontend_api_calls = []
+    
+    try:
+        logger.info("开始扫描workspace中的前端项目...")
+        console.print("[Info] 扫描workspace中的前端项目", style="dim")
+        update_task_log(task_id, "[Info] 扫描workspace中的前端项目")
+        
+        # 确定 workspace 路径
+        # 如果 project_root 已经在 workspace 目录下（例如：workspace/service-a），使用父目录
+        # 否则，使用 project_root/workspace
+        if os.path.basename(os.path.dirname(project_root)) == 'workspace':
+            workspace_path = os.path.dirname(project_root)
+            logger.info(f"检测到 project_root 在 workspace 下，使用父目录: {workspace_path}")
+        else:
+            workspace_path = os.path.join(project_root, 'workspace')
+            logger.info(f"使用 project_root/workspace: {workspace_path}")
+        
+        discovery = FrontendProjectDiscovery(workspace_path=workspace_path)
+        frontend_projects = discovery.discover_projects()
+        
+        if frontend_projects:
+            console.print(f"[bold green]OK[/bold green] 发现 {len(frontend_projects)} 个前端项目", style="green")
+            update_task_log(task_id, f"[Info] 发现 {len(frontend_projects)} 个前端项目")
+            
+            for project in frontend_projects:
+                console.print(f"  - {project.name} ({project.framework})", style="dim")
+                update_task_log(task_id, f"[Info]   - {project.name} ({project.framework})")
+                if project.api_base_url:
+                    console.print(f"    API: {project.api_base_url}", style="dim")
+            
+            # 1.6 扫描前端 API 调用
+            logger.info("开始扫描前端 API 调用...")
+            console.print("\n[bold blue]扫描前端 API 调用...[/bold blue]")
+            update_task_log(task_id, "[Info] 开始扫描前端 API 调用...")
+            
+            for project in frontend_projects:
+                try:
+                    scanner = FrontendApiScanner(project.path)
+                    calls = scanner.scan_project()
+                    frontend_api_calls.extend(calls)
+                    
+                    console.print(f"  - {project.name}: 发现 {len(calls)} 个 API 调用", style="dim")
+                    update_task_log(task_id, f"[Info]   - {project.name}: 发现 {len(calls)} 个 API 调用")
+                except Exception as e:
+                    logger.warning(f"扫描前端项目 {project.name} 失败: {e}")
+                    console.print(f"  - {project.name}: 扫描失败 - {e}", style="yellow")
+                    update_task_log(task_id, f"[Warning]   - {project.name}: 扫描失败 - {e}")
+            
+            if frontend_api_calls:
+                console.print(f"[bold green]OK[/bold green] 总共发现 {len(frontend_api_calls)} 个前端 API 调用", style="green")
+                update_task_log(task_id, f"[Info] 总共发现 {len(frontend_api_calls)} 个前端 API 调用")
+            else:
+                console.print("[yellow]未发现前端 API 调用[/yellow]", style="dim")
+                update_task_log(task_id, "[Info] 未发现前端 API 调用")
+        else:
+            console.print("[yellow]未发现前端项目[/yellow]", style="dim")
+            update_task_log(task_id, "[Info] 未发现前端项目")
+    
+    except Exception as e:
+        logger.warning(f"前端项目扫描失败: {e}")
+        console.print(f"[yellow]前端项目扫描失败: {e}[/yellow]", style="dim")
+        update_task_log(task_id, f"[Warning] 前端项目扫描失败: {e}")
+    # ===== 前端项目扫描结束 =====
     
     # 2. 解析跨项目分析参数
     if related_projects is None:
@@ -103,11 +175,22 @@ def run_analysis(project_root=None, base_ref='HEAD^', target_ref='HEAD', task_id
         update_task_log(task_id, "\n[Info] 开始克隆/更新关联项目...")
         
         # 创建 workspace 目录
-        workspace_dir = os.path.join(os.path.dirname(project_root), 'workspace')
+        # 修复：如果 project_root 已经在 workspace 目录下，直接使用其父目录
+        # 否则，在 project_root 的父目录下创建 workspace
+        if os.path.basename(os.path.dirname(project_root)) == 'workspace':
+            # project_root 已经在 workspace 下，例如：code_diff_project/workspace/service-a
+            workspace_dir = os.path.dirname(project_root)
+        else:
+            # project_root 不在 workspace 下，创建 workspace 目录
+            workspace_dir = os.path.join(os.path.dirname(project_root), 'workspace')
+        
         if not os.path.exists(workspace_dir):
             os.makedirs(workspace_dir)
             console.print(f"[Info] 创建 workspace 目录: {workspace_dir}", style="dim")
             update_task_log(task_id, f"[Info] 创建 workspace 目录: {workspace_dir}")
+        else:
+            console.print(f"[Info] 使用已存在的 workspace 目录: {workspace_dir}", style="dim")
+            update_task_log(task_id, f"[Info] 使用已存在的 workspace 目录: {workspace_dir}")
         
         # 克隆/更新关联项目（并行执行）
         successful_projects = []
@@ -211,11 +294,6 @@ def run_analysis(project_root=None, base_ref='HEAD^', target_ref='HEAD', task_id
                 console.print(f"[Info] 初始化多项目追踪器，扫描 {len(scan_roots)} 个项目...", style="dim")
                 update_task_log(task_id, f"[Info] 初始化多项目追踪器，扫描 {len(scan_roots)} 个项目")
                 
-                for idx, root in enumerate(scan_roots, 1):
-                    proj_name = os.path.basename(root)
-                    console.print(f"[Info]   {idx}. {proj_name}: {root}", style="dim")
-                    update_task_log(task_id, f"[Info]   {idx}. {proj_name}: {root}")
-                
                 tracer = MultiProjectTracer(scan_roots)
                 console.print(f"[Success] 多项目追踪器初始化完成", style="green")
                 update_task_log(task_id, f"[Success] 多项目追踪器初始化完成")
@@ -233,9 +311,210 @@ def run_analysis(project_root=None, base_ref='HEAD^', target_ref='HEAD', task_id
             update_task_log(task_id, error_msg)
             logger.error(f"Tracer initialization failed: {e}\n{traceback.format_exc()}")
 
+        # ===== 前端扫描和映射（使用已存在的前端代码） =====
+        frontend_calls_map = {}  # 存储每个API对应的前端调用信息
+        
+        try:
+            console.print("\n[Frontend Analysis] 开始分析前端API调用...", style="bold cyan")
+            update_task_log(task_id, "[Frontend Analysis] 开始分析前端API调用...")
+            
+            # 使用已经扫描的前端项目和API调用
+            if frontend_projects:
+                console.print(f"[Info] 使用已发现的 {len(frontend_projects)} 个前端项目", style="green")
+                console.print(f"[Info] 使用已扫描的 {len(frontend_api_calls)} 个前端API调用", style="green")
+                update_task_log(task_id, f"[Frontend API Scanner] 使用 {len(frontend_api_calls)} 个API调用")
+                
+                # 3. 建立前后端映射（从变更的文件中提取后端API）
+                backend_apis = []
+                for file_path in files_map.keys():
+                    if file_path.endswith('.java') and 'Controller' in file_path:
+                        # 解析Controller文件，提取API端点
+                        full_path = os.path.join(project_root, file_path)
+                        try:
+                            with open(full_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            
+                            # 提取类级别的 @RequestMapping
+                            class_base_path = ''
+                            class_mapping_match = re.search(r'@RequestMapping\s*\(\s*["\']([^"\']+)["\']', content)
+                            if class_mapping_match:
+                                class_base_path = class_mapping_match.group(1)
+                            
+                            # 提取类级别的菜单路径注释
+                            # 匹配：菜单路径：资产管理 > 订单管理
+                            # 或：对应前端菜单：资产管理 > 订单管理
+                            class_menu_path = None
+                            menu_patterns = [
+                                r'菜单路径[：:]\s*([^\n\r\(]+)',
+                                r'对应前端菜单[：:]\s*([^\n\r\(]+)',
+                                r'@menu\s+([^\n\r]+)',
+                            ]
+                            for menu_pattern in menu_patterns:
+                                menu_match = re.search(menu_pattern, content)
+                                if menu_match:
+                                    class_menu_path = menu_match.group(1).strip()
+                                    logger.info(f"从Controller注释中提取到菜单路径: {class_menu_path}")
+                                    break
+                            
+                            # 提取方法级别的映射注解
+                            # 匹配 @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @RequestMapping
+                            method_patterns = [
+                                (r'@GetMapping\s*\(\s*["\']([^"\']+)["\']', 'GET'),
+                                (r'@PostMapping\s*\(\s*["\']([^"\']+)["\']', 'POST'),
+                                (r'@PutMapping\s*\(\s*["\']([^"\']+)["\']', 'PUT'),
+                                (r'@DeleteMapping\s*\(\s*["\']([^"\']+)["\']', 'DELETE'),
+                            ]
+                            
+                            for pattern, method in method_patterns:
+                                matches = re.finditer(pattern, content)
+                                for match in matches:
+                                    method_path = match.group(1)
+                                    # 拼接完整路径
+                                    full_api_path = class_base_path + method_path
+                                    backend_api = BackendApi(
+                                        path=full_api_path,
+                                        method=method,
+                                        menu_path=class_menu_path  # 传入菜单路径
+                                    )
+                                    backend_apis.append(backend_api)
+                                    logger.info(f"提取到后端API: {method} {full_api_path}, 菜单路径: {class_menu_path}")
+                        
+                        except Exception as e:
+                            logger.error(f"解析Controller文件失败 {file_path}: {e}")
+                
+                logger.info(f"共提取到 {len(backend_apis)} 个后端API端点")
+                console.print(f"[Info] 提取到 {len(backend_apis)} 个后端API端点", style="green")
+                
+                if backend_apis:
+                    mapper = FrontendBackendMapper()
+                    mappings = mapper.map_apis(backend_apis, frontend_api_calls)
+                    
+                    logger.info(f"建立了 {len(mappings)} 个前后端映射关系")
+                    console.print(f"[Info] 建立了 {len(mappings)} 个前后端映射关系", style="green")
+                    
+                    # 初始化测试用例生成器（用于端识别）
+                    # 使用第一个前端项目的路径来初始化（如果有多个项目，使用第一个）
+                    test_case_generator = None
+                    if frontend_projects:
+                        first_project_path = frontend_projects[0].path
+                        logger.info(f"[端识别] 准备初始化测试用例生成器")
+                        logger.info(f"[端识别] 前端项目数量: {len(frontend_projects)}")
+                        logger.info(f"[端识别] 使用第一个项目路径: {first_project_path}")
+                        logger.info(f"[端识别] 项目对象: {frontend_projects[0]}")
+                        try:
+                            test_case_generator = TestCaseGenerator(project_path=first_project_path)
+                            logger.info(f"[端识别] ✅ 测试用例生成器初始化成功")
+                            logger.info(f"[端识别] 路由映射数量: {len(test_case_generator._route_to_company_types)}")
+                            logger.info(f"[端识别] 精确映射数量: {len(test_case_generator._route_menu_to_company_type)}")
+                        except Exception as e:
+                            logger.error(f"[端识别] ❌ 测试用例生成器初始化失败: {e}")
+                            import traceback
+                            logger.error(f"[端识别] 异常详情: {traceback.format_exc()}")
+                    else:
+                        logger.warning(f"[端识别] ⚠️ 未发现前端项目，无法初始化测试用例生成器")
+                    
+                    # 构建映射字典：API -> 前端调用列表
+                    for mapping in mappings:
+                        api_key = f"{mapping.backend_api.method} {mapping.backend_api.path}"
+                        frontend_calls_map[api_key] = []
+                        
+                        # 获取后端API的菜单路径（从Controller注释中提取的）
+                        backend_menu_path = getattr(mapping.backend_api, 'menu_path', None)
+                        
+                        for call in mapping.frontend_calls:
+                            # 优先使用前端调用的菜单路径，如果没有则使用后端的菜单路径
+                            frontend_menu_path = getattr(call, 'menu_path', None)
+                            final_menu_path = frontend_menu_path if frontend_menu_path else backend_menu_path
+                            
+                            # 【关键日志】记录 /balanceManageHome 相关API的菜单路径合并过程
+                            page_route = getattr(call, 'page_route', '')
+                            if '/balanceManageHome' in str(page_route) or '/balanceManageHome' in str(mapping.backend_api.path):
+                                logger.info(f"[菜单合并-关键] 🔍 API: {api_key}")
+                                logger.info(f"[菜单合并-关键] 🔍 前端菜单路径: {frontend_menu_path}")
+                                logger.info(f"[菜单合并-关键] 🔍 后端菜单路径: {backend_menu_path}")
+                                logger.info(f"[菜单合并-关键] 🔍 最终菜单路径: {final_menu_path}")
+                                logger.info(f"[菜单合并-关键] 🔍 页面路由: {page_route}")
+                                logger.info(f"[菜单合并-关键] 🔍 来源: {'前端' if frontend_menu_path else '后端注释'}")
+                                # 检查最终结果
+                                if final_menu_path and '企业信息' in final_menu_path:
+                                    logger.error(f"[菜单合并-关键] ❌❌❌ 错误！最终菜单路径包含'企业信息': '{final_menu_path}' (应该是'准入授信')")
+                                elif final_menu_path and '准入授信' in final_menu_path:
+                                    logger.info(f"[菜单合并-关键] ✅ 正确！最终菜单路径包含'准入授信': '{final_menu_path}'")
+                            
+                            # 识别端类型
+                            company_type = None
+                            company_type_name = None
+                            try:
+                                if test_case_generator and page_route:
+                                    logger.debug(f"[端识别] 开始识别: 路由={page_route}, 菜单={final_menu_path}")
+                                    company_types = test_case_generator._identify_company_type(page_route, final_menu_path)
+                                    if company_types:
+                                        company_type = company_types[0]  # 如果有多个端，使用第一个
+                                        company_type_name = test_case_generator._get_company_type_name(company_type)
+                                        logger.info(f"[端识别] ✅ 成功识别: API {api_key}: 路由={page_route}, 菜单={final_menu_path} -> {company_type} ({company_type_name})")
+                                    else:
+                                        logger.debug(f"[端识别] ⚠️ 无法识别端类型: 路由={page_route}, 菜单={final_menu_path}")
+                                elif not test_case_generator:
+                                    logger.debug(f"[端识别] ⚠️ 测试用例生成器未初始化")
+                                elif not page_route:
+                                    logger.debug(f"[端识别] ⚠️ 页面路由为空，无法识别端类型")
+                            except Exception as e:
+                                logger.warning(f"[端识别] ❌ 端识别失败: {e}, API={api_key}, 路由={page_route}, 菜单={final_menu_path}")
+                                import traceback
+                                logger.debug(f"[端识别] 异常详情: {traceback.format_exc()}")
+                            
+                            call_info = {
+                                'api_method': mapping.backend_api.method,
+                                'api_path': mapping.backend_api.path,
+                                'component_name': call.component_name,
+                                'file_path': call.file_path,
+                                'line_number': call.line_number,
+                                'call_type': call.call_type,
+                                'menu_path': final_menu_path or '',  # 使用合并后的菜单路径
+                                'page_route': getattr(call, 'page_route', ''),
+                                'trigger_element': getattr(call, 'trigger_element', ''),
+                                'trigger_text': getattr(call, 'trigger_text', ''),
+                                'company_type': company_type,  # 新增：端类型
+                                'company_type_name': company_type_name  # 新增：端名称
+                            }
+                            frontend_calls_map[api_key].append(call_info)
+                            
+                            if final_menu_path:
+                                logger.info(f"API {api_key} 的菜单路径: {final_menu_path} (来源: {'前端' if frontend_menu_path else '后端注释'})")
+                    
+                    console.print(f"[Info] 建立了 {len(mappings)} 个前后端映射关系", style="green")
+                    update_task_log(task_id, f"[Frontend-Backend Mapping] 建立了 {len(mappings)} 个映射关系")
+            else:
+                console.print("[Info] 未发现前端项目，跳过前端分析", style="yellow")
+                update_task_log(task_id, "[Frontend Analysis] 未发现前端项目")
+                
+        except Exception as e:
+            console.print(f"[Warning] 前端扫描失败: {e}", style="yellow")
+            logger.warning(f"前端扫描失败: {e}")
+            update_task_log(task_id, f"[Frontend Analysis] 扫描失败: {e}")
+            # 失败不影响主流程，继续执行
+        # ===== 前端扫描和映射结束 =====
+
         # 5. 逐个分析变更文件
         for filename, content in files_map.items():
             update_task_log(task_id, f"正在分析文件: {filename} ...")
+            
+            # ===== 为当前文件准备前端调用信息 =====
+            current_file_frontend_calls = []
+            if frontend_calls_map and 'Controller' in filename:
+                # 如果当前文件是Controller，传递所有的前端调用信息
+                # AI会根据API路径自动匹配相关的前端调用
+                for api_key, calls in frontend_calls_map.items():
+                    current_file_frontend_calls.extend(calls)
+                    logger.info(f"为Controller文件 {filename} 添加前端调用: {api_key}, {len(calls)} 个调用")
+            
+            if current_file_frontend_calls:
+                console.print(f"[Info] 文件 {filename} 关联 {len(current_file_frontend_calls)} 个前端调用", style="cyan")
+                logger.info(f"文件 {filename} 关联 {len(current_file_frontend_calls)} 个前端调用")
+            else:
+                logger.info(f"文件 {filename} 没有关联的前端调用")
+            # ===== 前端调用信息准备结束 =====
+            
             if USE_DEEPSEEK_API:
                 report = analyze_with_llm(
                     filename, 
@@ -245,7 +524,8 @@ def run_analysis(project_root=None, base_ref='HEAD^', target_ref='HEAD', task_id
                     base_ref, 
                     target_ref, 
                     tracer=tracer, 
-                    scan_roots=scan_roots
+                    scan_roots=scan_roots,
+                    frontend_calls_info=current_file_frontend_calls  # 新增参数
                 )
                 
                 if report is None: 
@@ -286,7 +566,7 @@ def run_analysis(project_root=None, base_ref='HEAD^', target_ref='HEAD', task_id
                 # Test Strategy Table
                 strategies = report.get('test_strategy', [])
                 if strategies:
-                    table = Table(title="[Test Strategy] 测试策略矩阵", show_header=True, header_style="bold magenta", box=box.ROUNDED, expand=True)
+                    table = Table(title="[Test Strategy] 测试策略矩阵", show_header=True, header_style="bold magenta", box=box.ASCII, expand=True)
                     table.add_column("优先级", style="cyan", width=8)
                     table.add_column("场景标题", style="bold")
                     table.add_column("Payload示例", style="dim")
@@ -357,6 +637,44 @@ def run_analysis(project_root=None, base_ref='HEAD^', target_ref='HEAD', task_id
                     log_msg += f"╰{'─'*8}┴{'─'*30}┴{'─'*35}╯\n"
 
                 update_task_log(task_id, log_msg)
+
+                # --- 添加前端调用信息到报告 ---
+                if frontend_api_calls and report.get('affected_apis'):
+                    try:
+                        # 从报告中提取后端 API 信息
+                        backend_apis = []
+                        for api in report.get('affected_apis', []):
+                            backend_apis.append(BackendApi(
+                                path=api.get('url', ''),
+                                method=api.get('method', 'GET'),
+                                controller=None,
+                                function=api.get('description', '')
+                            ))
+                        
+                        if backend_apis:
+                            # 建立前后端映射
+                            mapper = FrontendBackendMapper()
+                            mappings = mapper.map_apis(backend_apis, frontend_api_calls)
+                            
+                            # 将映射信息添加到报告中
+                            frontend_calls_info = []
+                            for mapping in mappings:
+                                for call in mapping.frontend_calls:
+                                    frontend_calls_info.append({
+                                        'backend_api': f"{mapping.backend_api.method} {mapping.backend_api.path}",
+                                        'component': call.component_name,
+                                        'file_path': call.file_path,
+                                        'line_number': call.line_number,
+                                        'call_type': call.call_type
+                                    })
+                            
+                            if frontend_calls_info:
+                                report['frontend_calls'] = frontend_calls_info
+                                console.print(f"\n[bold green]OK[/bold green] 发现 {len(frontend_calls_info)} 个前端调用关联", style="green")
+                                update_task_log(task_id, f"[Info] 发现 {len(frontend_calls_info)} 个前端调用关联")
+                    except Exception as e:
+                        logger.warning(f"添加前端调用信息失败: {e}")
+                        console.print(f"[yellow]添加前端调用信息失败: {e}[/yellow]", style="dim")
 
                 # --- 保存至数据库 ---
                 project_name = os.path.basename(project_root)

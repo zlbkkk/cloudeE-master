@@ -695,9 +695,9 @@ const ReportDetail = ({ report, onBack }) => {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       {/* Cross Service Impact */}
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all">
-                          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 pb-2 border-b border-slate-200/50">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 pb-2 border-b border-slate-200/50">
                               <ApiOutlined className="text-sm text-orange-500" /> 跨服务影响
-                          </span>
+                          </div>
                           <div className="text-sm text-slate-700 font-medium leading-loose">
                               {/* Force use of renderDetailItem to ensure highlighting logic is applied */}
                               {(() => {
@@ -737,9 +737,9 @@ const ReportDetail = ({ report, onBack }) => {
 
                       {/* Functional Impact */}
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all">
-                          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 pb-2 border-b border-slate-200/50">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 pb-2 border-b border-slate-200/50">
                               <AppstoreOutlined className="text-sm text-green-500" /> 功能影响
-                          </span>
+                          </div>
                           <div className="text-sm text-slate-700 font-medium leading-loose whitespace-pre-wrap">
                               {renderField(data.functional_impact)}
                           </div>
@@ -773,6 +773,52 @@ const ReportDetail = ({ report, onBack }) => {
                           </code>
                           <div className="text-xs text-slate-500 mt-1 leading-relaxed">
                               {api.description}
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      {/* Frontend Calls Section */}
+      {data.frontend_calls && data.frontend_calls.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-5">
+              <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4">
+                  <AppstoreOutlined className="text-blue-500" /> 前端调用信息 (Frontend Calls)
+                  <span className="text-xs font-normal text-slate-500 bg-blue-50 px-2 py-1 rounded">
+                      发现 {data.frontend_calls.length} 个前端调用
+                  </span>
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {data.frontend_calls.map((call, idx) => (
+                      <div key={idx} className="bg-blue-50/30 border border-blue-100 rounded-lg p-3 flex flex-col gap-2 hover:bg-blue-50 transition-colors">
+                          <div className="flex items-center gap-2">
+                              <AppstoreOutlined className="text-blue-600" />
+                              <span className="font-bold text-blue-700 text-sm">{call.component}</span>
+                          </div>
+                          <div className="text-xs text-slate-600 space-y-1">
+                              <div className="flex items-start gap-1">
+                                  <span className="text-slate-400">📄</span>
+                                  <code className="font-mono text-[10px] break-all">{call.file_path}</code>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                  <span className="text-slate-400">📍</span>
+                                  <span>第 {call.line_number} 行</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                  <span className="text-slate-400">🔗</span>
+                                  <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-blue-100 text-[10px]">
+                                      {call.call_type}
+                                  </span>
+                              </div>
+                              {call.backend_api && (
+                                  <div className="mt-2 pt-2 border-t border-blue-200">
+                                      <div className="text-[10px] text-slate-500 mb-1">关联后端 API:</div>
+                                      <code className="font-mono text-[10px] text-blue-700 bg-white px-1.5 py-0.5 rounded border border-blue-200 block break-all">
+                                          {call.backend_api}
+                                      </code>
+                                  </div>
+                              )}
                           </div>
                       </div>
                   ))}
@@ -826,9 +872,9 @@ const ReportDetail = ({ report, onBack }) => {
       {/* Tables Section */}
       <div className="grid gap-6">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+              <div className="px-5 py-2 border-b border-slate-100 flex items-center gap-2">
                   <BugOutlined className="text-cyan-500" />
-                  <h3 className="font-bold text-slate-700">下游依赖分析</h3>
+                  <h3 className="font-bold text-slate-700 text-sm">下游依赖分析</h3>
               </div>
               <Table 
                  dataSource={data.downstream_dependency} 
@@ -875,104 +921,279 @@ const ReportDetail = ({ report, onBack }) => {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 border-t-4 border-t-indigo-500">
+              <div className="px-5 py-2 border-b border-slate-100 flex items-center gap-2 border-t-4 border-t-indigo-500">
                   <CheckCircleOutlined className="text-indigo-500" />
-                  <h3 className="font-bold text-slate-700">测试策略矩阵</h3>
+                  <h3 className="font-bold text-slate-700 text-sm">测试策略矩阵</h3>
               </div>
-              <Table 
-                 dataSource={data.test_strategy} 
-                 rowKey="title" 
-                 pagination={false} 
-                 size="small"
-                 bordered={false}
-                 className="compact-table"
-                 // Remove global rowClassName to allow per-column control
-                 columns={[
-                    { 
-                        title: '优先级', 
-                        dataIndex: 'priority', 
-                        width: 70,
-                        // Ensure vertical center alignment
-                        onCell: () => ({ style: { verticalAlign: 'middle', textAlign: 'center' } }),
-                        render: t => {
-                            const colors = { 'P0': 'text-red-600 bg-red-50 border-red-100', 'P1': 'text-orange-600 bg-orange-50 border-orange-100', 'P2': 'text-blue-600 bg-blue-50 border-blue-100' };
-                            return <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold ${colors[t] || 'text-slate-600 bg-slate-50'}`}>{t}</span>;
-                        }
-                    },
-                    { 
-                        title: '场景标题', 
-                        dataIndex: 'title', 
-                        width: 180, 
-                        // Ensure vertical center alignment
-                        onCell: () => ({ style: { verticalAlign: 'middle' } }),
-                        render: t => <span className="font-bold text-slate-700 text-xs leading-tight block">{t}</span> 
-                    },
-                    { 
-                        title: '测试步骤', 
-                        dataIndex: 'steps', 
-                        width: 350, 
-                        render: (text) => {
-                            if (!text) return '-';
-                            // Custom compact list render for steps
-                            const items = typeof text === 'string' ? text.split(/(?:^|[\s。；;])(?=\d+[.、．]\s*)/).filter(p => p.trim()) : [];
-                            
-                            if (items.length > 1) {
+              <div className="overflow-x-auto">
+                  <Table 
+                     dataSource={data.test_strategy} 
+                     rowKey="title" 
+                     pagination={false} 
+                     size="middle"
+                     bordered={true}
+                     className="test-strategy-table"
+                     rowClassName={() => 'test-strategy-row'}
+                     scroll={{ x: 'max-content' }}
+                     columns={[
+                        { 
+                            title: <div className="text-center font-bold text-slate-700">优先级</div>, 
+                            dataIndex: 'priority', 
+                            width: 60,
+                            fixed: 'left',
+                            align: 'center',
+                            onCell: () => ({ 
+                                style: { 
+                                    verticalAlign: 'middle', 
+                                    textAlign: 'center',
+                                    padding: '12px 4px',
+                                    backgroundColor: '#fafafa'
+                                } 
+                            }),
+                            render: t => {
+                                const colors = { 
+                                    'P0': 'text-red-600 bg-red-50 border-red-200 shadow-sm', 
+                                    'P1': 'text-orange-600 bg-orange-50 border-orange-200 shadow-sm', 
+                                    'P2': 'text-blue-600 bg-blue-50 border-blue-200 shadow-sm' 
+                                };
+                                return <span className={`inline-block px-2 py-0.5 rounded border text-[10px] font-bold ${colors[t] || 'text-slate-600 bg-slate-50'}`}>{t}</span>;
+                            }
+                        },
+                        { 
+                            title: <div className="text-center font-bold text-slate-700">场景标题</div>, 
+                            dataIndex: 'title', 
+                            width: 150,
+                            fixed: 'left',
+                            align: 'center',
+                            onCell: () => ({ 
+                                style: { 
+                                    verticalAlign: 'middle', 
+                                    padding: '12px 8px',
+                                    backgroundColor: '#fafafa',
+                                    textAlign: 'center'
+                                } 
+                            }),
+                            render: t => (
+                                <div className="inline-flex items-center justify-center">
+                                    <div className="relative">
+                                        <div className="text-blue-600 text-xs px-2 py-1 bg-blue-50 border-l-4 border-blue-500 rounded-r shadow-sm" style={{ fontWeight: 900 }}>
+                                            {t}
+                                        </div>
+                                    </div>
+                                </div>
+                            )
+                        },
+                        { 
+                            title: <div className="font-bold text-slate-700">测试步骤</div>, 
+                            dataIndex: 'steps', 
+                            width: 400,
+                            onCell: () => ({ 
+                                style: { 
+                                    verticalAlign: 'top', 
+                                    padding: '12px 8px',
+                                    lineHeight: '1.5'
+                                } 
+                            }),
+                            render: (text) => {
+                                if (!text) return <span className="text-slate-400">-</span>;
+                                
+                                // 高亮步骤标题的函数（只高亮第一个冒号前的文字）
+                                const highlightStepTitles = (str) => {
+                                    // 找到第一个冒号的位置（中文冒号：或英文冒号:）
+                                    const firstColonIndex = str.search(/[：:]/);
+                                    
+                                    // 如果没有冒号，直接返回原文本
+                                    if (firstColonIndex === -1) {
+                                        return str;
+                                    }
+                                    
+                                    // 分割字符串：第一个冒号前的文字、第一个冒号、剩余部分
+                                    const beforeColon = str.substring(0, firstColonIndex);
+                                    const colon = str[firstColonIndex];
+                                    const afterColon = str.substring(firstColonIndex + 1);
+                                    
+                                    return (
+                                        <>
+                                            <span className="font-bold text-green-600">{beforeColon}</span>
+                                            <span className="font-bold text-green-600">{colon}</span>
+                                            {afterColon}
+                                        </>
+                                    );
+                                };
+                                
+                                // Custom compact list render for steps
+                                const items = typeof text === 'string' ? text.split(/(?:^|[\s。；;])(?=\d+[.、．]\s*)/).filter(p => p.trim()) : [];
+                                
+                                if (items.length > 1) {
+                                    return (
+                                        <div className="flex flex-col gap-2 w-full">
+                                            {items.map((part, idx) => {
+                                                const match = part.trim().match(/^(\d+[.、．]\s*)(.*)/s);
+                                                if (match) {
+                                                    return (
+                                                        <div key={idx} className="flex gap-2 items-start">
+                                                            <span className="font-mono text-indigo-600 font-bold shrink-0 select-none text-[10px] bg-indigo-50 px-1.5 py-0.5 rounded min-w-[20px] text-center border border-indigo-100">
+                                                                {match[1].trim().replace(/[.、．]/,'')}
+                                                            </span>
+                                                            <span className="leading-relaxed text-slate-700 text-xs flex-1">
+                                                                {highlightStepTitles(match[2])}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                }
+                                                return <div key={idx} className="leading-relaxed text-slate-700 text-xs">{highlightStepTitles(part)}</div>;
+                                            })}
+                                        </div>
+                                    );
+                                }
+                                return <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{highlightStepTitles(text)}</div>;
+                            }
+                        },
+                        { 
+                            title: <div className="text-center font-bold text-slate-700">Payload 示例</div>, 
+                            dataIndex: 'payload', 
+                            width: 280,
+                            align: 'center',
+                            onCell: () => ({ 
+                                style: { 
+                                    verticalAlign: 'top', 
+                                    padding: '12px 8px',
+                                    textAlign: 'center'
+                                } 
+                            }),
+                            render: t => {
+                                const content = cleanJsonString(t);
                                 return (
-                                    <div className="flex flex-col gap-1 w-full text-[11px] whitespace-normal">
-                                        {items.map((part, idx) => {
-                                            const match = part.trim().match(/^(\d+[.、．]\s*)(.*)/s);
-                                            if (match) {
-                                                return (
-                                                    <div key={idx} className="flex gap-1.5 items-start">
-                                                        <span className="font-mono text-slate-400 font-bold shrink-0 select-none text-[9px] bg-slate-50 px-1 rounded h-3.5 flex items-center justify-center leading-none mt-0.5 min-w-[16px] border border-slate-100">{match[1].trim().replace(/[.、．]/,'')}</span>
-                                                        <span className="leading-snug text-slate-600">{match[2]}</span>
-                                                    </div>
-                                                );
-                                            }
-                                            return <div key={idx} className="leading-snug text-slate-600">{part}</div>;
-                                        })}
+                                    <div className="flex justify-center">
+                                        <div className="relative group inline-block w-full">
+                                            <div className="bg-slate-50 rounded-md border border-slate-200 p-2 font-mono text-xs text-slate-600 max-h-[280px] overflow-y-auto custom-scrollbar leading-relaxed break-all pr-7 whitespace-pre-wrap shadow-inner text-left">
+                                                {content}
+                                            </div>
+                                            <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Button 
+                                                    type="text" 
+                                                    size="small" 
+                                                    icon={<CopyOutlined />} 
+                                                    className="text-slate-400 hover:text-blue-600 bg-white/90 backdrop-blur-sm shadow-md border border-slate-200 h-6 w-6 flex items-center justify-center rounded hover:shadow-lg transition-all"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(content);
+                                                        message.success('Payload 已复制');
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
                                 );
                             }
-                            return <div className="text-[11px] text-slate-600 whitespace-pre-wrap leading-snug">{renderField(text)}</div>;
-                        }
-                    },
-                    { 
-                        title: 'Payload 示例', 
-                        dataIndex: 'payload', 
-                        width: 220,
-                        render: t => {
-                            const content = cleanJsonString(t);
-                            return (
-                                <div className="relative group">
-                                    <div className="bg-slate-50 rounded border border-slate-200 p-1.5 font-mono text-[10px] text-slate-600 max-h-[300px] overflow-y-auto custom-scrollbar leading-tight break-all pr-6 whitespace-pre-wrap">
-                                        {content}
+                        },
+                        { 
+                            title: <div className="font-bold text-slate-700">验证点</div>, 
+                            dataIndex: 'validation',
+                            width: 260,
+                            onCell: () => ({ 
+                                style: { 
+                                    verticalAlign: 'top', 
+                                    padding: '12px 8px',
+                                    lineHeight: '1.5'
+                                } 
+                            }),
+                            render: (text) => {
+                                if (!text) return <span className="text-slate-400">-</span>;
+                                
+                                // 高亮数值的函数
+                                const highlightNumbers = (str) => {
+                                    // 匹配数字（包括小数点、逗号、等号）
+                                    const parts = str.split(/(\d+(?:[.,]\d+)*|[=＝])/);
+                                    return parts.map((part, i) => {
+                                        // 如果是数字
+                                        if (/^\d+(?:[.,]\d+)*$/.test(part)) {
+                                            return (
+                                                <span key={i} className="font-mono font-bold text-blue-600">
+                                                    {part}
+                                                </span>
+                                            );
+                                        }
+                                        // 如果是等号
+                                        if (/^[=＝]$/.test(part)) {
+                                            return <span key={i} className="text-slate-500 font-bold">{part}</span>;
+                                        }
+                                        return part;
+                                    });
+                                };
+                                
+                                // 如果是字符串，尝试按顿号、分号等分隔符拆分
+                                if (typeof text === 'string') {
+                                    // 首先检查是否包含明确的列表标记（如 "1. "、"2. " 等）
+                                    const hasNumberedList = /\d+[.、．]\s+/.test(text);
+                                    
+                                    // 如果有明确的数字列表标记，按数字标记分割
+                                    if (hasNumberedList) {
+                                        // 按照 "数字. " 或 "数字、" 或 "数字． " 的模式分割
+                                        const items = text.split(/(?=\d+[.、．]\s+)/).map(item => item.trim()).filter(item => item && /^\d+[.、．]\s+/.test(item));
+                                        
+                                        if (items.length > 1) {
+                                            return (
+                                                <div className="flex flex-col gap-2 w-full">
+                                                    {items.map((item, idx) => {
+                                                        // 移除开头的数字标记
+                                                        const cleanItem = item.replace(/^\d+[.、．]\s+/, '');
+                                                        return (
+                                                            <div key={idx} className="flex gap-2 items-start">
+                                                                <span className="font-mono text-green-600 font-bold shrink-0 select-none text-[10px] bg-green-50 px-1.5 py-0.5 rounded min-w-[20px] text-center border border-green-100">
+                                                                    {idx + 1}
+                                                                </span>
+                                                                <span className="leading-relaxed text-slate-700 text-xs flex-1" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
+                                                                    {highlightNumbers(cleanItem)}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        }
+                                    } else {
+                                        // 如果没有数字列表标记，按顿号、分号、句号等分隔
+                                        // 要求分隔符后面有空格或者是结尾
+                                        const items = text.split(/[、；;。](?=\s|$)/).map(item => item.trim()).filter(item => item);
+                                        
+                                        // 如果拆分后有多个项，显示为列表
+                                        if (items.length > 1) {
+                                            return (
+                                                <div className="flex flex-col gap-2 w-full">
+                                                    {items.map((item, idx) => (
+                                                        <div key={idx} className="flex gap-2 items-start">
+                                                            <span className="font-mono text-green-600 font-bold shrink-0 select-none text-[10px] bg-green-50 px-1.5 py-0.5 rounded min-w-[20px] text-center border border-green-100">
+                                                                {idx + 1}
+                                                            </span>
+                                                            <span className="leading-relaxed text-slate-700 text-xs flex-1" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
+                                                                {highlightNumbers(item)}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            );
+                                        }
+                                    }
+                                    
+                                    // 单行文本也高亮数值，允许换行
+                                    return (
+                                        <div className="text-xs text-slate-700 leading-relaxed" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
+                                            {highlightNumbers(text)}
+                                        </div>
+                                    );
+                                }
+                                
+                                // 否则使用默认渲染，允许换行
+                                return (
+                                    <div className="text-xs text-slate-700 leading-relaxed" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
+                                        {renderField(text)}
                                     </div>
-                                    <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button 
-                                            type="text" 
-                                            size="small" 
-                                            icon={<CopyOutlined />} 
-                                            className="text-slate-400 hover:text-blue-600 bg-white/80 backdrop-blur-sm shadow-sm border border-slate-100 h-6 w-6 flex items-center justify-center rounded"
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(content);
-                                                message.success('Payload 已复制');
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            );
+                                );
+                            }
                         }
-                    },
-                    { 
-                        title: '验证点', 
-                        dataIndex: 'validation', 
-                        width: 300, 
-                        render: t => <div className="text-[11px] text-slate-600 leading-snug whitespace-normal">{renderField(t)}</div> 
-                    }
-                 ]}
-                 scroll={{ x: 'max-content' }}
-              />
+                     ]}
+                  />
+              </div>
           </div>
       </div>
       <FlowchartModal 

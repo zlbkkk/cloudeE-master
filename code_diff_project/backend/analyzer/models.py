@@ -97,6 +97,9 @@ class AnalysisReport(models.Model):
     prompt_tokens = models.IntegerField(verbose_name="输入Token", default=0)
     completion_tokens = models.IntegerField(verbose_name="输出Token", default=0)
     total_tokens = models.IntegerField(verbose_name="总Token", default=0)
+    input_cost = models.DecimalField(max_digits=10, decimal_places=6, verbose_name="输入费用(元)", default=0, help_text="输入token的费用")
+    output_cost = models.DecimalField(max_digits=10, decimal_places=6, verbose_name="输出费用(元)", default=0, help_text="输出token的费用")
+    api_cost = models.DecimalField(max_digits=10, decimal_places=6, verbose_name="API总费用(元)", default=0, help_text="输入+输出的总费用")
     created_at = models.DateTimeField(default=django.utils.timezone.now, verbose_name="分析时间")
 
     class Meta:
@@ -120,6 +123,13 @@ class AnalysisTask(models.Model):
     mode = models.CharField(max_length=20, default='local', verbose_name="模式")
     source_branch = models.CharField(max_length=255, verbose_name="工作分支", null=True, blank=True)
     target_branch = models.CharField(max_length=255, verbose_name="基准分支", null=True, blank=True)
+    # Commit 详细信息字段
+    base_commit_message = models.TextField(verbose_name="基准提交消息", null=True, blank=True)
+    base_commit_author = models.CharField(max_length=255, verbose_name="基准提交作者", null=True, blank=True)
+    base_commit_date = models.CharField(max_length=100, verbose_name="基准提交时间", null=True, blank=True)
+    target_commit_message = models.TextField(verbose_name="目标提交消息", null=True, blank=True)
+    target_commit_author = models.CharField(max_length=255, verbose_name="目标提交作者", null=True, blank=True)
+    target_commit_date = models.CharField(max_length=100, verbose_name="目标提交时间", null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', verbose_name="状态")
     created_at = models.DateTimeField(default=django.utils.timezone.now, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")

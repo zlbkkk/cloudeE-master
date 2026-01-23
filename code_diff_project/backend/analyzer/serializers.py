@@ -9,6 +9,8 @@ class AnalysisTaskSerializer(serializers.ModelSerializer):
 class AnalysisReportSerializer(serializers.ModelSerializer):
     source_branch = serializers.CharField(source='task.source_branch', read_only=True, allow_null=True)
     target_branch = serializers.CharField(source='task.target_branch', read_only=True, allow_null=True)
+    # 添加 task 的完整信息
+    task = AnalysisTaskSerializer(read_only=True)
 
     class Meta:
         model = AnalysisReport

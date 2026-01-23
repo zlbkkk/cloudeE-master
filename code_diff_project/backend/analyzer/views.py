@@ -193,6 +193,96 @@ class AnalysisReportViewSet(viewsets.ModelViewSet):
                         subprocess.check_call(["git", "checkout", target_branch], cwd=repo_path)
                         logger.info(f"[Info] Resetting to origin/{target_branch}...")
                         subprocess.check_call(["git", "reset", "--hard", f"origin/{target_branch}"], cwd=repo_path)
+                    
+                    # 获取 commit 详细信息
+                    try:
+                        logger.info(f"[Info] 获取 commit 详细信息...")
+                        
+                        # 获取基准 commit 信息
+                        if base_commit and base_commit != 'HEAD' and base_commit != 'HEAD^':
+                            base_info_cmd = ["git", "log", "-1", "--pretty=format:%s|%an|%ad", "--date=format:%Y-%m-%d %H:%M:%S", base_commit]
+                            base_info = subprocess.check_output(base_info_cmd, cwd=repo_path, text=True, encoding='utf-8').strip()
+                            if base_info:
+                                parts = base_info.split('|')
+                                if len(parts) >= 3:
+                                    task.base_commit_message = parts[0]
+                                    task.base_commit_author = parts[1]
+                                    task.base_commit_date = parts[2]
+                                    logger.info(f"[Info] 基准 commit: {parts[0][:50]}... by {parts[1]}")
+                        
+                        # 获取目标 commit 信息
+                        if target_commit and target_commit != 'HEAD':
+                            target_info_cmd = ["git", "log", "-1", "--pretty=format:%s|%an|%ad", "--date=format:%Y-%m-%d %H:%M:%S", target_commit]
+                            target_info = subprocess.check_output(target_info_cmd, cwd=repo_path, text=True, encoding='utf-8').strip()
+                            if target_info:
+                                parts = target_info.split('|')
+                                if len(parts) >= 3:
+                                    task.target_commit_message = parts[0]
+                                    task.target_commit_author = parts[1]
+                                    task.target_commit_date = parts[2]
+                                    logger.info(f"[Info] 目标 commit: {parts[0][:50]}... by {parts[1]}")
+                        
+                        task.save()
+                        logger.info(f"[Info] Commit 详细信息获取完成")
+                        
+                    except Exception as commit_info_error:
+                        logger.warning(f"[Warning] 获取 commit 详细信息失败: {str(commit_info_error)}")
+                        # 不影响主流程，继续执行
+                    
+                    # 拉取前端项目代码（使用相同的工作分支）
+                    # 固定拉取 beehive-order-finance-frontend 项目
+                    frontend_git_url = "https://git.hrlyit.com/beehive/beehive-order-finance-frontend.git"
+                    frontend_git_url_with_token = add_token_to_git_url(frontend_git_url)
+                    # 从 Git URL 中提取项目名称（自动去除 .git 后缀）
+                    frontend_repo_name = frontend_git_url.split('/')[-1].replace('.git', '')
+                    frontend_repo_path = os.path.join(workspace_root, frontend_repo_name)
+                    
+                    try:
+                        logger.info(f"[Info] 准备拉取前端项目代码...")
+                        task.log_details += f"\n正在拉取前端项目代码...\n"
+                        task.log_details += f"前端项目: {frontend_git_url}\n"
+                        task.log_details += f"前端分支: {target_branch}\n"
+                        task.save()
+                        
+                        if not os.path.exists(frontend_repo_path):
+                            logger.info(f"[Info] Cloning frontend repo to {frontend_repo_path}...")
+                            task.log_details += f"正在克隆前端代码仓库...\n"
+                            task.save()
+                            subprocess.check_call(["git", "clone", frontend_git_url_with_token, frontend_repo_path])
+                        else:
+                            logger.info(f"[Info] Fetching frontend updates...")
+                            task.log_details += f"正在更新前端代码仓库...\n"
+                            task.save()
+                            subprocess.check_call(["git", "fetch", "--all"], cwd=frontend_repo_path)
+                        
+                        # 切换到与主项目相同的分支（从 source_branch 获取）
+                        if target_branch and target_branch != 'HEAD':
+                            logger.info(f"[Info] Checking out frontend branch: {target_branch}")
+                            task.log_details += f"切换前端分支到: {target_branch}\n"
+                            task.save()
+                            subprocess.check_call(["git", "reset", "--hard", "HEAD"], cwd=frontend_repo_path)
+                            # 尝试切换分支，如果分支不存在则使用 master
+                            try:
+                                subprocess.check_call(["git", "checkout", target_branch], cwd=frontend_repo_path)
+                                subprocess.check_call(["git", "reset", "--hard", f"origin/{target_branch}"], cwd=frontend_repo_path)
+                                task.log_details += f"前端代码已更新到分支: {target_branch}\n"
+                                logger.info(f"[Info] 前端项目已切换到分支: {target_branch}")
+                            except subprocess.CalledProcessError:
+                                logger.warning(f"[Warning] Frontend branch {target_branch} not found, using master")
+                                task.log_details += f"[Warning] 前端分支 {target_branch} 不存在，使用 master 分支\n"
+                                subprocess.check_call(["git", "checkout", "master"], cwd=frontend_repo_path)
+                                subprocess.check_call(["git", "reset", "--hard", "origin/master"], cwd=frontend_repo_path)
+                            task.save()
+                        
+                        logger.info(f"[Info] 前端项目代码拉取完成")
+                        task.log_details += f"前端项目代码拉取完成\n\n"
+                        task.save()
+                        
+                    except Exception as frontend_error:
+                        logger.warning(f"[Warning] 前端项目拉取失败: {str(frontend_error)}")
+                        task.log_details += f"[Warning] 前端项目拉取失败: {str(frontend_error)}\n"
+                        task.log_details += f"继续执行主项目分析...\n\n"
+                        task.save()
                 
                 # Run analysis comparing Base Commit vs Target Commit
                 task.log_details += f"开始执行分析: {base_commit} ... {target_commit}\n"
@@ -637,12 +727,228 @@ class DiscoveredProjectViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+    # @action(detail=True, methods=['post'], url_path='commit-to-git')
+    # def commit_to_git(self, request, pk=None):
+    #     """
+    #     将分析报告文件提交到 Git 仓库
+    #     """
+    #     try:
+    #         report = self.get_object()
+            
+    #         # 获取参数
+    #         commit_message = request.data.get('commit_message', f'Add analysis report: {report.file_name}')
+    #         target_branch = request.data.get('target_branch')  # 可选：指定目标分支
+            
+    #         # 确定项目路径
+    #         workspace_root = os.path.abspath(os.path.join(settings.BASE_DIR, '..', 'workspace'))
+    #         repo_name = report.project_name
+    #         repo_path = os.path.join(workspace_root, repo_name)
+            
+    #         if not os.path.exists(repo_path):
+    #             return Response({
+    #                 "success": False,
+    #                 "message": f"项目仓库不存在: {repo_path}"
+    #             }, status=status.HTTP_404_NOT_FOUND)
+            
+    #         # 确定报告文件路径（假设报告保存在项目根目录的 reports 文件夹）
+    #         reports_dir = os.path.join(repo_path, 'reports')
+    #         if not os.path.exists(reports_dir):
+    #             os.makedirs(reports_dir)
+            
+    #         report_file_name = f"analysis_report_{report.id}_{report.file_name.replace('/', '_')}.json"
+    #         report_file_path = os.path.join(reports_dir, report_file_name)
+            
+    #         # 将报告内容写入文件
+    #         import json
+    #         with open(report_file_path, 'w', encoding='utf-8') as f:
+    #             report_data = {
+    #                 'id': report.id,
+    #                 'project_name': report.project_name,
+    #                 'file_name': report.file_name
+    #                 }
+    #     """
+    #     获取首页统计数据
+    #     """
+    #     try:
+    #         from .models import DiscoveredProject, GitOrganization
+    #         from django.db.models import Count, Avg, Q
+    #         from django.db.models.functions import TruncDate
+            
+    #         # 1. 核心指标
+    #         total_analyses = AnalysisReport.objects.count()
+    #         total_projects = DiscoveredProject.objects.filter(is_active=True).count()
+            
+    #         # 本周分析次数（最近7天）
+    #         week_ago = timezone.now() - datetime.timedelta(days=7)
+    #         weekly_analyses = AnalysisReport.objects.filter(created_at__gte=week_ago).count()
+            
+    #         # 平均分析时长（基于任务表）
+    #         avg_duration_seconds = AnalysisTask.objects.filter(
+    #             status='COMPLETED'
+    #         ).annotate(
+    #             duration=models.F('updated_at') - models.F('created_at')
+    #         ).aggregate(
+    #             avg_duration=Avg('duration')
+    #         )['avg_duration']
+            
+    #         if avg_duration_seconds:
+    #             avg_duration_minutes = avg_duration_seconds.total_seconds() / 60
+    #             avg_duration = f"{avg_duration_minutes:.1f}分钟"
+    #         else:
+    #             avg_duration = "暂无数据"
+            
+    #         # 2. 分析趋势数据（最近30天）
+    #         thirty_days_ago = timezone.now() - datetime.timedelta(days=30)
+    #         trend_data = AnalysisReport.objects.filter(
+    #             created_at__gte=thirty_days_ago
+    #         ).annotate(
+    #             date=TruncDate('created_at')
+    #         ).values('date').annotate(
+    #             count=Count('id')
+    #         ).order_by('date')
+            
+    #         # 转换为前端需要的格式
+    #         trend_list = [
+    #             {
+    #                 'date': item['date'].strftime('%Y-%m-%d'),
+    #                 'count': item['count']
+    #             }
+    #             for item in trend_data
+    #         ]
+            
+    #         # 3. 任务成功率趋势（最近30天）
+    #         task_trend = AnalysisTask.objects.filter(
+    #             created_at__gte=thirty_days_ago
+    #         ).annotate(
+    #             date=TruncDate('created_at')
+    #         ).values('date').annotate(
+    #             total=Count('id'),
+    #             completed=Count('id', filter=Q(status='COMPLETED')),
+    #             failed=Count('id', filter=Q(status='FAILED'))
+    #         ).order_by('date')
+            
+    #         task_trend_list = [
+    #             {
+    #                 'date': item['date'].strftime('%Y-%m-%d'),
+    #                 'total': item['total'],
+    #                 'completed': item['completed'],
+    #                 'failed': item['failed'],
+    #                 'success_rate': round(item['completed'] / item['total'] * 100, 1) if item['total'] > 0 else 0
+    #             }
+    #             for item in task_trend
+    #         ]
+            
+    #         # 4. 最活跃项目 TOP 10
+    #         top_projects = AnalysisReport.objects.values('project_name').annotate(
+    #             count=Count('id')
+    #         ).order_by('-count')[:10]
+            
+    #         top_projects_list = [
+    #             {
+    #                 'project_name': item['project_name'],
+    #                 'count': item['count']
+    #             }
+    #             for item in top_projects
+    #         ]
+            
+    #         # 5. 风险等级分布
+    #         risk_distribution = AnalysisReport.objects.values('risk_level').annotate(
+    #             count=Count('id')
+    #         ).order_by('risk_level')
+            
+    #         # 风险等级映射（英文转中文，兼容旧数据）
+    #         risk_level_map = {
+    #             'CRITICAL': '高',
+    #             'HIGH': '高',
+    #             'MEDIUM': '中',
+    #             'LOW': '低',
+    #             'UNKNOWN': '未知',
+    #             '严重': '高',  # 兼容旧数据
+    #             '高': '高',
+    #             '中': '中',
+    #             '低': '低',
+    #             '未知': '未知'
+    #         }
+            
+    #         # 转换为中文并合并相同等级
+    #         risk_dist_dict = {}
+    #         for item in risk_distribution:
+    #             original_level = item['risk_level']
+    #             chinese_level = risk_level_map.get(original_level, original_level)
+    #             if chinese_level in risk_dist_dict:
+    #                 risk_dist_dict[chinese_level] += item['count']
+    #             else:
+    #                 risk_dist_dict[chinese_level] = item['count']
+            
+    #         # 6. 最近分析记录（最近10条）
+    #         recent_analyses = AnalysisReport.objects.select_related('task').order_by('-created_at')[:10]
+            
+    #         # 风险等级映射（英文转中文，兼容旧数据）
+    #         risk_level_map_recent = {
+    #             'CRITICAL': '高',
+    #             'HIGH': '高',
+    #             'MEDIUM': '中',
+    #             'LOW': '低',
+    #             'UNKNOWN': '未知',
+    #             '严重': '高',  # 兼容旧数据
+    #             '高': '高',
+    #             '中': '中',
+    #             '低': '低',
+    #             '未知': '未知'
+    #         }
+            
+    #         recent_list = [
+    #             {
+    #                 'id': report.id,
+    #                 'project_name': report.project_name,
+    #                 'file_name': report.file_name,
+    #                 'risk_level': risk_level_map_recent.get(report.risk_level, report.risk_level),  # 转换为中文
+    #                 'created_at': report.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+    #                 'task_id': report.task.id if report.task else None,
+    #                 'task_status': report.task.status if report.task else None
+    #             }
+    #             for report in recent_analyses
+    #         ]
+            
+    #         # 7. 系统健康状态
+    #         running_tasks = AnalysisTask.objects.filter(
+    #             status__in=['PENDING', 'PROCESSING']
+    #         ).count()
+            
+    #         # 返回统计数据
+    #         return Response({
+    #             'core_metrics': {
+    #                 'total_analyses': total_analyses,
+    #                 'total_projects': total_projects,
+    #                 'weekly_analyses': weekly_analyses,
+    #                 'avg_duration': avg_duration
+    #             },
+    #             'trend_data': trend_list,
+    #             'task_trend': task_trend_list,
+    #             'top_projects': top_projects_list,
+    #             'risk_distribution': risk_dist_dict,
+    #             'recent_analyses': recent_list,
+    #             'system_health': {
+    #                 'running_tasks': running_tasks
+    #             }
+    #         })
+            
+    #     except Exception as e:
+    #         logger.error(f"获取统计数据失败: {str(e)}")
+    #         logger.error(traceback.format_exc())
+    #         return Response(
+    #             {'error': f'获取统计数据失败: {str(e)}'},
+    #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+    #         )
+
+
 class DashboardViewSet(viewsets.ViewSet):
     """
-    首页数据统计接口
+    Dashboard 统计数据 ViewSet
+    提供首页统计数据接口
     """
     
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='statistics')
     def statistics(self, request):
         """
         获取首页统计数据

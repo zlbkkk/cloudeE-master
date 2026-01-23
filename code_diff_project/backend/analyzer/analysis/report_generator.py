@@ -40,6 +40,13 @@ def save_to_db(filename, report, diff_content, project_name="Unknown", task_id=N
         prompt_tokens = usage.get('prompt_tokens', 0)
         completion_tokens = usage.get('completion_tokens', 0)
         total_tokens = usage.get('total_tokens', 0)
+        
+        # 计算 API 费用（单位：元）
+        # 输入：¥0.0900/1M tokens = ¥0.0900/1,000,000 tokens
+        # 输出：¥0.7510/1M tokens = ¥0.7510/1,000,000 tokens
+        input_cost = (prompt_tokens / 1_000_000) * 0.0900
+        output_cost = (completion_tokens / 1_000_000) * 0.7510
+        api_cost = input_cost + output_cost
 
         AnalysisReport.objects.create(
             project_name=project_name,
@@ -51,9 +58,12 @@ def save_to_db(filename, report, diff_content, project_name="Unknown", task_id=N
             diff_content=diff_content,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            total_tokens=total_tokens
+            total_tokens=total_tokens,
+            input_cost=input_cost,
+            output_cost=output_cost,
+            api_cost=api_cost
         )
-        console.print(f"[bold green]✓[/bold green] [dim]已保存至数据库 (Tokens: {total_tokens})[/dim]")
+        console.print(f"[bold green]✓[/bold green] [dim]已保存至数据库 (Tokens: {total_tokens}, 输入: ¥{input_cost:.6f}, 输出: ¥{output_cost:.6f}, 总计: ¥{api_cost:.6f})[/dim]")
     except Exception as e:
         console.print(f"[red]保存数据库失败: {e}[/red]")
 

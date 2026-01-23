@@ -622,26 +622,33 @@ const AutoDiscoveryConfig = () => {
                     left: '50%',
                     transform: 'translateX(-50%)',
                     background: toastMessage.type === 'success' 
-                        ? 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)'
-                        : 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)',
-                    color: '#ffffff',
-                    padding: '16px 32px',
-                    borderRadius: '8px',
-                    boxShadow: '0 6px 16px rgba(0,0,0,0.2), 0 3px 6px rgba(0,0,0,0.12)',
+                        ? '#f6ffed'
+                        : '#fff2f0',
+                    color: '#262626',
+                    padding: '14px 24px',
+                    borderRadius: '6px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                    border: toastMessage.type === 'success' 
+                        ? '1px solid #b7eb8f'
+                        : '1px solid #ffccc7',
                     zIndex: 9999,
-                    fontSize: '15px',
-                    fontWeight: '500',
+                    fontSize: '14px',
+                    fontWeight: '400',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '12px',
-                    minWidth: '300px',
-                    maxWidth: '500px',
+                    gap: '10px',
+                    minWidth: '280px',
+                    maxWidth: '480px',
                     animation: 'slideDown 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
                 }}>
-                    <span style={{ fontSize: '20px' }}>
+                    <span style={{ 
+                        fontSize: '18px',
+                        color: toastMessage.type === 'success' ? '#52c41a' : '#ff4d4f',
+                        fontWeight: '600'
+                    }}>
                         {toastMessage.type === 'success' ? '✓' : '✕'}
                     </span>
-                    <span>{toastMessage.message}</span>
+                    <span style={{ lineHeight: '1.5' }}>{toastMessage.message}</span>
                 </div>
             )}
 

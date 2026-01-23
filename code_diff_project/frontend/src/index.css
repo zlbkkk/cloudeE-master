@@ -21,3 +21,49 @@ code {
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Test Strategy Table Styles */
+.test-strategy-table .ant-table {
+  font-size: 13px;
+}
+
+.test-strategy-table .ant-table-thead > tr > th {
+  background-color: #f8fafc !important;
+  font-weight: 600;
+  color: #334155;
+  padding: 14px 12px !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+  font-size: 13px;
+}
+
+.test-strategy-table .ant-table-tbody > tr {
+  transition: all 0.2s ease;
+}
+
+.test-strategy-table .ant-table-tbody > tr:hover {
+  background-color: #f8fafc !important;
+}
+
+.test-strategy-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f1f5f9 !important;
+  font-size: 13px;
+}
+
+.test-strategy-table .ant-table-tbody > tr:last-child > td {
+  border-bottom: none !important;
+}
+
+/* Improve table cell spacing */
+.test-strategy-row > td {
+  padding: 16px 12px !important;
+}
+
+/* Better border styling */
+.test-strategy-table .ant-table-bordered .ant-table-container {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.test-strategy-table .ant-table-bordered .ant-table-cell {
+  border-right: 1px solid #f1f5f9;
+}
