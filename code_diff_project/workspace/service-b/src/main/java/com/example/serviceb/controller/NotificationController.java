@@ -86,4 +86,19 @@ public class NotificationController {
     public String sendOrderSummaryNotification(@RequestParam Long orderId) {
         return notificationService.sendOrderSummaryNotification(orderId);
     }
+
+    /**
+     * 【新增接口】发送订单状态历史通知
+     * 【完整调用链测试】HTTP API → Service → Dubbo RPC（调用新增方法）
+     *
+     * 调用链：
+     * 1. HTTP: POST /api/notifications/order-status-history?orderId=123
+     * 2. Service: NotificationService.sendOrderStatusHistoryNotification(123L)
+     * 3. Dubbo RPC: OrderService.getOrderStatusHistory(123L) [service-a]
+     * 4. Dubbo RPC: OrderService.getOrderById(123L) [service-a]
+     */
+    @PostMapping("/order-status-history")
+    public String sendOrderStatusHistoryNotification(@RequestParam Long orderId) {
+        return notificationService.sendOrderStatusHistoryNotification(orderId);
+    }
 }
